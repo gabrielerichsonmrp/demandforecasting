@@ -16,8 +16,12 @@ output:
   pdf_document: default
 ---
 
+Reference:
+[Forecasting: Principles and Practice](https://otexts.com/fpp2/)<br>
+[Exploring & Visualizing Time Series](https://afit-r.github.io/ts_exploration)<br>
+
 <head>
-		<title>Mobile Price Classification</title>
+		<title>"Demand Forecasting</title>
 		<link rel="icon" href="assets/logo.png" type="image/png">
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -42,15 +46,50 @@ library(tidyverse)
 library(ggplot2)
 library(plotly)
 library(scales)
+library(lubridate)
 library(tidyquant)
 library(glue)
 library(ggthemes)
 library(paletti)
 library(kableExtra)
+library(sqldf)
+library(gridExtra)
+library(grid)
 
-#Time Series
-library(lubridate)
+#Time Series 
 library(padr)
+library(TSstudio)
+library(forecast)
+library(tseries)
+
+```
+
+
+```{r, include=FALSE}
+# WARNA
+mycolorfill = c(
+  
+  light_blue="#2f4b7c", 
+  smooth_blue ="#4B87CB",
+  light_purple ="#665191",
+  dark_pink="#a05195", 
+  light_pink="#d45087", 
+  light_red="#f95d6a", 
+  dark_orange="#ff6347",
+  semi_orange="#e79658",
+  orange="#dda15a",
+  cream="#b59378",
+  dark_cream="#A57F5F",
+  choc="#85664B",
+  dark_choc="#6b5340",
+  light_orange="#ff7c43"
+)
+
+
+viz_palette(mycolorfill)
+mycolor_fill  <- get_scale_fill(get_pal(mycolorfill))
+mycolor_color <- get_scale_color(get_pal(mycolorfill))
+mycolor_hex <- get_hex(mycolorfill)
 
 ```
 
@@ -61,21 +100,47 @@ Scotty Technologies Inc. ("Scotty") adalah sebuah perusahaan start-up teknologi 
 Menurut informasi yang dilansir dari [markets.businessinsider.com](https://markets.businessinsider.com/news/stocks/bcap-invests-in-turkish-rideshare-company-scotty-1028819466), Scotty berencana untuk menjadi super-app pertama di Turkey dengan tekonologi dan model bisnis yang distruptif, serta berencana untuk melanjutkan pertumbuhan yang menjanjikan dan mencapai profitabilitas dalam waktu dekat. Berbicara mengenai pertumbuhan, tentu saja tidak luput dari demand. Oleh karena itu, projek ini ditujukan untuk membuat model analisa dan memprediksi demand transaksi per-jam pada layanan motorcycle ride-sharing di Scotty. Dalam proses pembuatan model ini, kita menggunakan data transaksi Scotty dari 2017-10-01 sampai 2017-12-02. <br>
 
 
+# Problem Identification
+
+Problem yang diselesaikan yaitu membuat model untuk memprediksi demand transaksi per-jam pada layanan motorcycle ride-sharing di Scotty. Namun yang hendak diprediksi dalam rentang waktu berapa lama? Mari kita cek dulu supaya dapat membantu proses pemodelan yang akan kita buat.
+
+```{r}
+# Read Data Test
+scotty_test <- read.csv("data_input/scotty_ts/data-test.csv")
+glimpse(scotty_test)
+```
+
+Struktut data diatas belum sesuai. Mari sesuaikan struktur datanya dan meilhat rentang waktu yang hendak diprediksi dahulu:
+```{r}
+scotty_test <- scotty_test %>% 
+   mutate(
+      # Transaksi Per-Jam
+      datetime = floor_date(ymd_hms(datetime), unit="hour"),
+      demand = as.integer(demand)
+   )
+summary(scotty_test)
+```
+
+Data diatas merupakan summary dari data yang hendak diprediksi. Berdasarkan informasi tersebut, dapat disimpullkan bawah masalah yang perlu kita selesaikan yaitu melakukan prediksi **demand per-jam** di sub area **sxk97, sxk9e dan sxk9** dalam rentang waktu dari **2017-12-03 00:00:00 sampai 2017-12-09 23:00:00** atau **24 jam** * **1 minggu**. Oke, mari kita mulai proses nya.
+
+
 # Data Preparation
 ## Read Data
+Berikut ini adalah data yang kita punya untuk melakukan analisa dan prediksi.
+
 ```{r}
-scotty_ts <- read.csv("data_input/scotty_ts/data-train.csv")
+scotty_input <- read.csv("data_input/scotty_ts/data-train.csv")
 ```
 
 **5 Top Line Data**
 ```{r}
-head(scotty_ts)
+head(scotty_input)
 ```
 
 <br>
 **5 Bottom Line Data**
 ```{r}
-tail(scotty_ts,5)
+tail(scotty_input,5)
 ```
 
 ***
@@ -109,17 +174,17 @@ confirmed_time_sec    | Time different from request to confirmed (in seconds)
 
 ## Missing & Duplicate Value?
 **Missing Value**
-Jika dilihat terdapat missing value pada variabel **trip_id** dan **driver_id**, namun tidak menjadi masalah karena pada case ini kita butuh data waktu dan demand.
+Jika dilihat terdapat missing value pada variabel **trip_id** dan **driver_id**, namun tidak menjadi masalah karena pada case ini kita butuh data waktu, sub area dan demand.
 ```{r}
-colSums(is.na(scotty_ts))
+colSums(is.na(scotty_input))
 ```
 <br>
 
 **Duplicate Value**
 Dataset ini tidak memiliki data transaksi yang duplikat, sehingga bisa kita lanjutkan ke tahap pre-processing.
 ```{r}
-data.frame(jumlah.observasi.awal=length(scotty_ts$id),
-           jumlah.observasi.unik=length(unique(scotty_ts$id)))
+data.frame(jumlah.observasi.awal=length(scotty_input$id),
+           jumlah.observasi.unik=length(unique(scotty_input$id)))
 ```
 
 ***
@@ -129,13 +194,13 @@ data.frame(jumlah.observasi.awal=length(scotty_ts$id),
 # Data Pre-processing
 ## Data Structure
 ```{r}
-glimpse(scotty_ts)
+glimpse(scotty_input)
 ```
 
 Dataset yang dimiliki terdiri dari **90.133** observasi dan **16** variabel. Jika dilihat dari struktur datanya, beberapa variabel memiliki tipe data yang belum sesuai. Namun, karena projek ini bertujuan untuk melakukan time-series forecasting terhadap demand per-jam pada layanan motorcycle ride-sharing di Scotty, maka data yang kita perlukan adalah waktu transaksi per-jam dan demand pada setiap src_sub_area. Maka dari Berikut prosesnya:
 
 ```{r}
-scotty_ts <- scotty_ts %>% 
+scotty_input <- scotty_input %>% 
    mutate(
       # Transaksi Per-Jam
       datetime = floor_date(ymd_hms(start_time), unit="hour")
@@ -146,27 +211,68 @@ scotty_ts <- scotty_ts %>%
 ```
 
 
-## Missing Series Datetime Value
-Dalam melakukan analisa dan prediksi time series maka seluruh data waktu harus lengkap secara sekuensial. Jam opearasional Scotty yaitu 24jam/hari, sehingga kita harus memastikan seluruh data jam sudah lengkap secara sekuensial dari rentang tanggal minimum hingga tanggal maximum.
+## Missing Sequential Datetime Value
+
+Dalam melakukan analisa dan prediksi time series ada beberapa hal yang harus terpenuhi antara lain:<br>
+  1. Data tidak boleh ada yang missing<br>
+  2. Data harus terurut berdasarkan periode waktunya<br>
+  3. Tidak boleh ada waktu atau periode yang terlewat/bolong<br>
+  
+Terkait case ini, Jam opearasional Scotty yaitu 24jam/hari, sehingga kita harus memastikan seluruh data jam sudah lengkap secara sekuensial dari rentang tanggal minimum hingga tanggal maximum. Jika terdapat deret waktu yang kosong, 
+maka dapat dilakukan imputasi data dengan asumsi bahwa pada waktu tersebut memang tidak terdapat transaksi, sehingga **jumlah demand = 0**.
 
 ```{r, warning=FALSE, error=FALSE}
-scotty_ts <- scotty_ts %>% 
+scotty_input <- scotty_input %>% 
   group_by(src_sub_area) %>% 
   # PAD tanggal sekuensial
-  padr::pad(start_val = min(scotty_ts$datetime), end_val = max(scotty_ts$datetime)) %>% 
+  padr::pad(start_val = min(scotty_input$datetime), end_val = max(scotty_input$datetime)) %>% 
   ungroup() %>% 
   distinct() %>% 
   mutate(
     # replace NA Value menjadi 0
     demand = ifelse(is.na(demand),0,demand)
-  )
+  ) %>% 
+  arrange(datetime)
 ```
 
-Berikut ini visualisasi dataset denagan data waktu yang lengkap dan sekuensial. Titik/Poin berwarna merah, hijau dan biru menandakan data pada jam tersebut tidak ada dan mari kita asumsikan bahwa pada jam tersebut memang tidak terdapat transaksi, sehingga **jumlah demand = 0**.
+**Berikut data hari yang tidak memiliki transaksi:**
+```{r}
+scotty_input %>% filter(demand==0)
+```
+
+Data diatas menunjukan total waktu yang tidak terdapat transaksi dari sub Area **sxk97, sxk9e dan sxk9s** yaitu 301 Jam.
+
+
+
+## Data Summary
+```{r}
+summary(scotty_input)
+```
+
+Informasi di atas merupakan summary keseluruhan data yang kita miliki. Dapat diketahui bahwa dataset ini merupakan data transaksi dari 3 sub area yaitu **sxk97, sxk9e dan sxk9s** yang terjadi dari **2017-10-01 00:00** sampai **2017-12-02 23:00** dengan **jumlah minimum 0 demand** dan **jumlah maximum 217 demand**. Demand 0 diasumsikan bahwa pada waktu tertentu memang tidak terdapat transaksi.
+
+
+***
+
+<br>
+
+# Exploratory Data Analysis
+
+## Demand Analysis by Sub-Area
+Berikut ini visualisasi demand berdasarkan sub-area dari dari **2017-10-01 00:00** sampai **2017-12-02 23:00**. Titik/Poin berwarna merah, hijau dan biru menandakan data deret waktu tersebut kosong atau tidak terdapat transaksi pada waktu tersebut.
 
 ```{r, fig.width=8.5, fig.asp=0.75}
+scotty_demand <- scotty_input 
 
-scotty_demand <- scotty_ts %>% 
+mean_demand <- scotty_demand %>% 
+  group_by(src_sub_area) %>% 
+  summarise(mean = mean(demand))
+
+scotty_demand <- sqldf("SELECT SD.*, MD.mean
+                        FROM scotty_demand SD
+                        INNER JOIN mean_demand MD ON SD.src_sub_area = MD.src_sub_area")
+
+scotty_demand <- scotty_demand %>% 
     mutate(
       weekdays = weekdays(datetime),
       popup = glue(
@@ -176,42 +282,290 @@ scotty_demand <- scotty_ts %>%
       Demand: {demand}"
     )) 
 
+
 plot_scotty_demand <- ggplot(scotty_demand,aes(x=datetime, y=demand),show.legend = FALSE)+
    #geom_point()+
-  
   geom_line(show.legend = FALSE,size=0.3)+
   geom_point(aes(text=popup),size=0.05)+
   geom_point(data = scotty_demand %>% filter(demand==0),
-             aes(x=datetime, y=demand, color=src_sub_area, text=popup),size=1, show.legend = FALSE)+
+             aes(x=datetime, y=demand, color=src_sub_area, text=popup),size=0.5, show.legend = FALSE)+
   labs(
     x = NULL, 
     y = NULL,
-    title = "Demand by Sub Area"
+    title = "Demand by Sub-Area"
   ) +
   scale_x_datetime(date_breaks = "7 day", labels = date_format("%b %d"))+
   facet_wrap(~ src_sub_area, scale = "free", ncol = 1)+
+  theme_minimal()+
   theme(
     legend.position = "none", 
     plot.title = element_text(hjust = 0.5),
-    panel.spacing = unit(1, "lines"))+
-  tidyquant::theme_tq()
+    panel.spacing = unit(1, "lines"))
 
 ggplotly(p = plot_scotty_demand, tooltip="text") %>% 
   layout(showlegend=FALSE)
-  #config(displayModeBar = F, scrollzoom = T) %>% 
-  #layout(dragmode = "pan")
- 
+```
+
+Pada grafik diatas dapat dilihat bahwa jumlah demand dari ketiga sub-area relatif sama dan juga terdapat **pola seasonal** meskipun belum terlihat jelas detailnya. Selain itu, juga dapat dilihat demand pada **Sabtu,4 November 2017 pukul 01.00** dan **Sabtu, 25 November 2017 pukul 01.00** jauh lebih tinggi dari hari lainnya. Sayangnya data yang kita miliki belum dapat menjawab hal tersebut, namun mari kita fokus ke demand. Berikut adalah demand per-harinya: 
+
+```{r,fig.width=12.5}
+# Daily Demand
+polar_day <- scotty_input %>% 
+  mutate(day=weekdays(datetime)) %>% 
+  group_by(src_sub_area,day) %>% 
+  summarise(demand_per_day=sum(demand)) %>% 
+  ungroup() %>% 
+  mutate(
+    day = ordered(day, levels=c("Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"))
+  )
+
+serror <- function(x) sqrt(var(x)/length(x)) 
+
+ggplot(polar_day %>% filter(src_sub_area=="sxk97"), aes(x=day, y=demand_per_day, fill = day)) +
+  geom_bar(width = 1, stat = "identity", color = "white", show.legend = FALSE) +
+  geom_errorbar(aes(ymin = demand_per_day - serror(demand_per_day), 
+                    ymax = demand_per_day + serror(demand_per_day), 
+                    color = day), 
+                    width = .2) + 
+  scale_y_continuous(breaks = 0:nlevels(day)) +
+  labs(
+    title = "Daily Demand in Sub-Area sxk97"
+  )+
+ theme_minimal() +
+  theme(axis.title = element_blank(),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5, size=12, face="bold"),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(face="bold"))+
+  coord_polar() -> day_polar1
+
+ggplot(polar_day %>% filter(src_sub_area=="sxk9e"), aes(x=day, y=demand_per_day, fill = day)) +
+  geom_bar(width = 1, stat = "identity", color = "white", show.legend = FALSE) +
+  geom_errorbar(aes(ymin = demand_per_day - serror(demand_per_day), 
+                    ymax = demand_per_day + serror(demand_per_day), 
+                    color = day), 
+                    width = .2) + 
+  scale_y_continuous(breaks = 0:nlevels(day)) +
+  labs(
+    title = "Daily Demand in Sub-Area sxk9e"
+  )+
+  theme_minimal() +
+  theme(axis.title = element_blank(),
+        legend.position = "none",
+         plot.title = element_text(hjust = 0.5, size=12, face="bold"),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(face="bold"))+
+  coord_polar() ->day_polar2
+
+
+ggplot(polar_day %>% filter(src_sub_area=="sxk9s"), aes(x=day, y=demand_per_day, fill = day)) +
+  geom_bar(width = 1, stat = "identity", color = "white", show.legend = FALSE) +
+  geom_errorbar(aes(ymin = demand_per_day - serror(demand_per_day), 
+                    ymax = demand_per_day + serror(demand_per_day), 
+                    color = day), 
+                    width = .2) + 
+  scale_y_continuous(breaks = 0:nlevels(day)) +
+  labs(
+    title = "Daily Demand in Sub-Area sxk9s"
+  )+
+ theme_minimal() +
+  theme(axis.title = element_blank(),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5,size=12, face="bold"),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(face="bold"))+
+  coord_polar() ->day_polar3
+
+
+grid.arrange(day_polar1,day_polar2,day_polar3, ncol = 3)
+
 ```
 
 
-## Data Summary
+Grafik diatas memberikan informasi total demmand per-hari dari masing-masing Sub-Area. Secara keseluruhan, ketiga Sub-Area menunjukan pola demand per-hari yang sama, dimana **total demand paling besar yaitu pada hari Jumat** dan **total demand paling kecil yaitu pada hari Minggu**. Mari kita lihat data demand per-jamnya berikut:
+
+```{r, fig.width=12}
+# Hourly Demand
+polar_hourly <- scotty_input %>% 
+  mutate(hour=hour(datetime)) %>% 
+  group_by(src_sub_area,hour) %>% 
+  summarise(demand_per_hour=sum(demand)) %>% 
+  ungroup() %>% 
+  mutate(
+    hour = ordered(hour,levels=c("0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17",
+                              "18","19","20","21","22","23"))
+  )
+
+ggplot(polar_hourly %>% filter(src_sub_area=="sxk97"), aes(x=hour, y=demand_per_hour, fill = hour)) +
+  geom_bar(width = 1, stat = "identity", color = "white", show.legend = FALSE) +
+  geom_errorbar(aes(ymin = demand_per_hour - serror(demand_per_hour), 
+                    ymax = demand_per_hour + serror(demand_per_hour), 
+                    color = hour), 
+                    width = .2) + 
+  scale_y_continuous(breaks = 0:nlevels(hour)) +
+  labs(
+    title = "Hourly Demand in Sub-Area sxk97",
+    subtitle = "24 Hour Format"
+  )+
+ theme_minimal() +
+  theme(axis.title = element_blank(),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5,size=12, face="bold"),
+        plot.subtitle = element_text(hjust = 0.5,size=11),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(size=11, face="bold"))+
+  coord_polar() -> hour_polar1
+
+
+ggplot(polar_hourly %>% filter(src_sub_area=="sxk9e"), aes(x=hour, y=demand_per_hour, fill = hour)) +
+  geom_bar(width = 1, stat = "identity", color = "white", show.legend = FALSE) +
+  geom_errorbar(aes(ymin = demand_per_hour - serror(demand_per_hour), 
+                    ymax = demand_per_hour + serror(demand_per_hour), 
+                    color = hour), 
+                    width = .2) + 
+  scale_y_continuous(breaks = 0:nlevels(hour)) +
+  labs(
+    title = "Hourly Demand in Sub-Area sxk9e",
+    subtitle = "24 Hour Format"
+  )+
+ theme_minimal() +
+  theme(axis.title = element_blank(),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5,size=12, face="bold"),
+        plot.subtitle = element_text(hjust = 0.5,size=11),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(size=11, face="bold"))+
+  coord_polar() -> hour_polar2
+
+
+ggplot(polar_hourly %>% filter(src_sub_area=="sxk9s"), aes(x=hour, y=demand_per_hour, fill = hour)) +
+  geom_bar(width = 1, stat = "identity", color = "white", show.legend = FALSE) +
+  geom_errorbar(aes(ymin = demand_per_hour - serror(demand_per_hour), 
+                    ymax = demand_per_hour + serror(demand_per_hour), 
+                    color = hour), 
+                    width = .2) + 
+  scale_y_continuous(breaks = 0:nlevels(hour)) +
+  labs(
+    title = "Hourly Demand in Sub-Area sxk9s",
+    subtitle = "24 Hour Format"
+  )+
+ theme_minimal() +
+  theme(axis.title = element_blank(),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5,size=12, face="bold"),
+        plot.subtitle = element_text(hjust = 0.5,size=11),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(size=11, face="bold"))+
+  coord_polar() -> hour_polar3
+
+
+grid.arrange(hour_polar1,hour_polar2,hour_polar3, ncol = 3)
+
+```
+
+Grafik diatas memberikan informasi total demmand per-jam dari masing-masing Sub-Area. Secara keseluruhan, ketiga Sub-Area menunjukan pola demand per-jam yang sama, dimana **total demand relatif tinggi dari pukul 17:00 hingga pukul 19:00** dan **total demmand relatif rendah dari pukul 01:00 hingga pukul 0:00**. Namun, yang berbeda adalah **total demand sub-area sxk9e juga cukup tinggi pada pukul 08:00**, hal ini berbeda dengan sub-area lainnya. 
+
+
+***
+
+<br>
+
+## Seasonal Analysis
+
+Sebelum melakukan forecasting kita perlu melakukan analisis seasonal dahulu untuk mengetahui objek timeseries kita merupakan single seasonal atau multiple seasonal. Hal ini berguna untuk menentukan metode forecasting yang tepat digunakan. Salah satu cara untuk melakukan analisis seasonal yaitu melakukan Decompose. Decompose merupakan tahapan dalam analisis time series yang digunakan untuk menguraikan beberapa komponen yang berupa:
+
+  * Trend : pola data secara general, cenderung untuk naik atau turun.
+
+  * Seasonal : pola musiman yang membentuk pola berulang pada periode waktu yang tetap.
+
+  * Residual/Error : pola yang tidak dapat ditangkap dalam trend dan seasona.
+  
+Jika pada hasil decompose, trend masih membentuk sebuah pola maka dapat dicurigai masih ada seasonality yang belum ditangkap. Seharusnya trend cenderung naik atau cendurung turun atau membentuk garis yang smooth. 
+
+Sesuai dengan masalah yang hendak diselesaikan yaitu melakukan prediksi demand per-jam pada masing-masing sub-area selama 1 minggu, maka mari kita lakukan decompose secara mingguan menggunakan single seasonal dan multiple seasonal. Berikut prosesnya:
+
+
 ```{r}
-summary(scotty_ts)
+scotty_ts_weekly <- scotty_input %>% 
+  filter(src_sub_area=="sxk9s") %>% 
+  select(demand) %>% 
+  ts(frequency = 24*7)
+
+plot_ts_weekly <- scotty_ts_weekly %>% 
+  decompose() %>% 
+   autoplot()+ 
+   labs(
+      title = "Single Seasonal: Decomposition on Daily and Weekly in Sub-Area sxk9s",
+      subtitle = "Single Seasonal"
+    )+
+    theme_minimal()+
+    theme(
+          title = element_text(size=11),
+          axis.title=element_text(size=9, face="bold"),
+          axis.text.x=element_text(size=9),
+          axis.text.y=element_text(size=9),
+          legend.position = "none",
+          panel.spacing = unit(4, "pt")
+          ) 
+
+ggplotly(plot_ts_weekly)
 ```
 
-Informasi di atas merupakan summary keseluruhan data yang kita miliki. Dapat diketahui bahwa dataset ini merupakan data transaksi dari 3 sub area yaitu **sxk97, sxk9e dan sxk9s** yang terjadi dari **2017-10-01 00:00** sampai **2017-12-02 23:00** dengan **jumlah minimum 0 demand**  dan **jumlah maximum 217 demand**. Demand 0 dapat diasumsikan bahwa pada waktu tertentu memang tidak terdapat transaksi. 
+Pada hasil decompose objek single sesonal time-series diatas, dapat dilihat pola tren masih belum smooth dan terkesan masih membentuk pola pada beberapa bagian, mungkin saja terdapat pola seasonal yang belum ditangkap. Sehingga, mari kita coba decompose menggunakan objek multiple seasonal time-series.
 
 
+```{r}
+scotty_msts_weekly <- scotty_input %>% 
+  filter(src_sub_area=="sxk9s") %>% 
+  select(demand) %>% 
+  msts(seasonal.periods = c(24, 24*7))
+
+plot_msts_weekly <- scotty_msts_weekly %>% 
+   mstl() %>% 
+   autoplot()+ 
+   labs(
+      title = "Decomposition on Daily and Weekly in Sub-Area sxk9s"
+    )+
+    theme_minimal()+
+    theme(
+          title = element_text(size=12),
+          axis.title=element_text(size=9, face="bold"),
+          axis.text.x=element_text(size=9),
+          axis.text.y=element_text(size=9),
+          legend.position = "none",
+          panel.spacing = unit(4, "pt")
+          ) 
+
+ggplotly(plot_msts_weekly)
+
+
+```
+
+Pada hasil decompose objek multiple seasonal time-series diatas, dapat dilihat pola tren terlihat lebih smooth dan tidak membentuk pola. Hal ini mengindikasikan data yang kita miliki merupakan objek multiple seasonal time-series.
+
+```{r}
+
+data_msts <- msts(scotty_input  %>% 
+  select(demand), seasonal.periods = c(24, 24*7))
+data_msts_decompose <- mstl(data_msts, s.window = 24*7)
+
+as.data.frame(data_msts_decompose) %>% 
+  mutate(datetime = scotty_input$datetime) %>% 
+  mutate(
+    dow = wday(datetime, label = TRUE, abbr = FALSE),
+    hour = as.factor(hour(datetime))
+  ) %>% 
+  group_by(dow, hour) %>% 
+  summarise(seasonal = sum(Seasonal24 + Seasonal168)) %>% 
+  ggplot(mapping = aes(x = hour, y = seasonal)) +
+  geom_col(aes(fill = dow)) +
+  scale_fill_viridis_d(option = "plasma") +
+  theme_minimal() +
+  labs(
+    title = "Seasonal Analysis based Daily and Weekly Demand"
+  )
+
+```
 
 
 
