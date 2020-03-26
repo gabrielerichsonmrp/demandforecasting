@@ -64,6 +64,8 @@ library(TSstudio)
 library(forecast)
 library(tseries)
 library(magrittr)
+library(yardstick)
+library(timetk)
 
 ```
 
@@ -609,6 +611,17 @@ intest <- interval(test_start, test_end)
 
 data.frame("interval_data_train"=intrain,
               "interval_data_test"=intest)
+
+
+scotty_data <- scotty_data %>% 
+  mutate(data_sample = case_when(
+        datetime %within% intrain ~ "train",
+        datetime %within% intest ~ "test")) %>% 
+  drop_na() %>% 
+  mutate(data_sample = factor(data_sample, levels = c("train", "test")))
+  
+head(scotty_data)
+
 ```
 
 **Berikut ini visualisasi pembagian data train dan data test:**
@@ -658,7 +671,6 @@ Seperti yang kita lihat pada visualisasi sebelumnya, dimana jumlah demand di 3 S
 # Spread data menjadi 3 Sub-Area 
 scotty_data <- scotty_data %>%
   spread(src_sub_area, demand)
-
 head(scotty_data)
 
 ```
@@ -680,7 +692,7 @@ scotty_data
 **3. Convert datato long format**
 ```{r}
 scotty_data <- scotty_data %>% 
-  gather(src_sub_area, demand, -datetime)
+  gather(src_sub_area, demand, -datetime, -data_sample)
 head(scotty_data)
 ```
 
@@ -708,24 +720,13 @@ reverse <- function(vector, recipe, varname) {
 # NESTED MODEL FITTING AND FORECASTING
 
 ```{r}
-scotty_data %<>%
-  mutate(sample = case_when(
-    datetime %within% intrain ~ "train",
-    datetime %within% intest ~ "test"
-  )) %>%
-  drop_na()
-  
-scotty_data
-```
-
-
-```{r}
 scotty_data <- scotty_data %>%
-  group_by(src_sub_area, sample) %>%
+  group_by(src_sub_area, data_sample) %>%
   nest(.key = "data") %>%
-  spread(sample, data)
+  spread(data_sample, data)
 
 scotty_data
+
 ```
 
 
@@ -734,8 +735,8 @@ scotty_data
 ```{r}
 # Membuat list model data
 data_funs <- list(
-  ts = function(x) ts(x$demand, frequency = 24*7),
-  msts = function(x) msts(x$demand, seasonal.periods = c(24, 24 * 7))
+  ts = function(x) ts(x$demand, frequency = 24),
+  msts = function(x) msts(x$demand, seasonal.periods = c(24, 24*7))
 )
 
 data_funs
@@ -765,9 +766,11 @@ scotty_data <- scotty_data %>%
 # models list
 models <- list(
   ets = function(x) ets(x),
-   holt.winter = function(x) HoltWinters(x,seasonal = "additive"),
+  holt.winter = function(x) HoltWinters(x,seasonal = "additive"),
+  auto.arima = function(x) auto.arima(x, seasonal = TRUE),
   stlm = function(x) stlm(x),
-  auto.arima = function(x) auto.arima(x),
+  stlm_ets = function(x) stlm(x, method="ets"),
+  stlm_arima = function(x) stlm(x, method="arima"),
   tbats = function(x) tbats(x, use.box.cox = FALSE, 
                   use.trend = TRUE, 
                   use.damped.trend = TRUE,
@@ -798,11 +801,12 @@ scotty_data <- scotty_data %>%
     !(model_name == "auto.arima" & data_fun_name == "msts")
   )
 
+head(scotty_data)
 ```
 
 # EXECUTE THE NESTED FITTING
 
-```{r}
+```{r, eval=FALSE}
 scotty_ts_model <- scotty_data %>%
   mutate(
     params = map(train, ~ list(x = .x)),
@@ -812,16 +816,33 @@ scotty_ts_model <- scotty_data %>%
   ) %>%
   select(-data, -params)
 
+models <- scotty_ts_model
+#scotty_ts_model <- saveRDS(models, "scotty_ts_model.RDS")
 wd <-  as.character(getwd())
-saveRDS(object=scotty_ts_model, file=paste(paste(wd,"/dscotty_ts_model/",sep = ""),"scotty_ts_model.rds",sep=""))
+saveRDS(object=models, file=paste(paste(wd,"/scotty_ts_model/",sep = ""),"scotty_ts_model.rds",sep=""))
 
 ```
 
 
 ```{r}
-scotty_ts_model <- saveRDS(data, "data_input/scotty_ts_model.rds")
-  
-scotty_ts_model
+scotty_ts_model <- readRDS("scotty_ts_model/scotty_ts_model.rds")
+head(scotty_ts_model)
 ```
 
+
+# Evaluation
+
+```{r}
+scotty_model_eval <- scotty_ts_model %>% 
+  mutate(
+    MAE_error_test = map(fitted, ~ forecast(.x, h = test_size)) %>%
+                     map2_dbl(test, ~ mae_vec(truth = reverse(.y$demand,rec,src_sub_area), 
+                                              estimate = reverse(.x$mean,rec,src_sub_area))),
+    MAE_error_train = map(fitted, ~ forecast(.x, h = test_size)) %>%
+                      map2_dbl(train, ~ mae_vec(truth = reverse(.y$demand,rec,src_sub_area), 
+                                                estimate = reverse(.x$fitted,rec,src_sub_area)))
+    ) %>% 
+  arrange(src_sub_area, MAE_error_test,MAE_error_train) 
+
+```
 
