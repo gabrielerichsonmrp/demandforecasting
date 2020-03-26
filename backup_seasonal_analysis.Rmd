@@ -1,0 +1,204 @@
+---
+title: "Untitled"
+author: "gabrielmrp"
+date: "3/26/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	fig.align = "center",
+	message = FALSE,
+	warning = FALSE,
+	comment = "#>",
+	result = "hide"
+)
+
+options(scipen = 9999999)
+#rm(list=ls())
+
+#Data Wrangling and Visualization
+library(Rcpp)
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(scales)
+library(lubridate)
+library(tidyquant)
+library(glue)
+library(ggthemes)
+library(paletti)
+library(kableExtra)
+library(sqldf)
+library(gridExtra)
+library(grid)
+
+#Time Series 
+library(padr)
+library(TSstudio)
+library(forecast)
+library(tseries)
+
+```
+
+
+```{r, include=FALSE}
+# WARNA
+mycolorfill = c(
+  
+  light_blue="#2f4b7c", 
+  smooth_blue ="#4B87CB",
+  light_purple ="#665191",
+  dark_pink="#a05195", 
+  light_pink="#d45087", 
+  light_red="#f95d6a", 
+  dark_orange="#ff6347",
+  semi_orange="#e79658",
+  orange="#dda15a",
+  cream="#b59378",
+  dark_cream="#A57F5F",
+  choc="#85664B",
+  dark_choc="#6b5340",
+  light_orange="#ff7c43"
+)
+
+
+viz_palette(mycolorfill)
+mycolor_fill  <- get_scale_fill(get_pal(mycolorfill))
+mycolor_color <- get_scale_color(get_pal(mycolorfill))
+mycolor_hex <- get_hex(mycolorfill)
+
+```
+
+
+# Intro
+
+Scotty Technologies Inc. ("Scotty") adalah sebuah perusahaan start-up teknologi yang didirikan pada tahun 2017 di Istanbul, Turkey. Salah satu layanan utama dari Scotty adalah *motorcycle ride-sharing* atau yang akrab kita ketahui *Ojek Online*.
+Menurut informasi yang dilansir dari [markets.businessinsider.com](https://markets.businessinsider.com/news/stocks/bcap-invests-in-turkish-rideshare-company-scotty-1028819466), Scotty berencana untuk menjadi super-app pertama di Turkey dengan tekonologi dan model bisnis yang distruptif, serta berencana untuk melanjutkan pertumbuhan yang menjanjikan dan mencapai profitabilitas dalam waktu dekat. Berbicara mengenai pertumbuhan, tentu saja tidak luput dari demand. Oleh karena itu, projek ini ditujukan untuk membuat model analisa dan memprediksi demand transaksi per-jam pada layanan motorcycle ride-sharing di Scotty. Dalam proses pembuatan model ini, kita menggunakan data transaksi Scotty dari 2017-10-01 sampai 2017-12-02. <br>
+
+
+# Problem Identification
+
+Problem yang diselesaikan yaitu membuat model untuk memprediksi demand transaksi per-jam pada layanan motorcycle ride-sharing di Scotty. Namun yang hendak diprediksi dalam rentang waktu berapa lama? Mari kita cek dulu supaya dapat membantu proses pemodelan yang akan kita buat.
+
+```{r}
+# Read Data Test
+scotty_test <- read_csv("data_input/scotty_ts/data-test.csv")
+glimpse(scotty_test)
+```
+
+Struktut data diatas belum sesuai. Mari sesuaikan struktur datanya dan meilhat rentang waktu yang hendak diprediksi dahulu:
+```{r}
+scotty_test <- scotty_test %>% 
+   mutate(
+      # Transaksi Per-Jam
+      datetime = floor_date(datetime, unit="hour"),
+      demand = as.integer(demand)
+   )
+summary(scotty_test)
+```
+
+
+# seasonal analysis and adjustment
+
+```{r}
+# Single seasonal analysis and adjustment
+scotty_ts <- scotty_input %>% 
+  filter(src_sub_area=="sxk9s") %>% 
+  select(demand) %>% 
+  ts(frequency = 24*7)
+
+scotty_ts %>% tail(24*7) %>% autoplot()
+scotty_ts %>% tail(24*7) %>% seasonplot()
+
+scotty_dc <- scotty_ts %>% decompose(type="multiplicative") 
+scotty_dc %>% autoplot()
+
+
+scotty_df <- data.frame(datetime = seq(from = ymd_hms("2017-10-01 00:00:00"), to = ymd_hms("2017-12-02 23:00:00"), 
+                                by = "hour"),
+                     demand = as.data.frame(scotty_ts)$demand)
+
+scotty_df %>% 
+  mutate(seasonality = scotty_dc$seasonal,
+         hourly = hour(datetime)) %>% 
+  distinct(hourly, seasonality) %>% 
+  ggplot(aes(x = hourly, y = seasonality)) +
+  geom_col()+
+  theme_minimal()
+
+
+scotty_df <- scotty_df %>% 
+  mutate(seasadj = seasadj(scotty_dc))
+
+scotty_df %>% 
+  ggplot(aes(x = datetime, y = seasadj))+
+  geom_point(data = scotty_df %>% filter(demand == 0), col = "firebrick")+
+  geom_line()
+
+```
+
+
+```{r}
+# Multiple seasonal analysis and adjustment
+scotty_msts <- scotty_input %>% 
+  filter(src_sub_area=="sxk9s") %>% 
+  select(demand) %>% 
+  msts(seasonal.periods = c(24,24*7))
+
+scotty_msts %>% tail(24*7) %>% autoplot()
+scotty_msts %>% tail(24*7) %>% seasonplot()
+
+scotty_msts_dc <- scotty_msts %>% mstl()
+scotty_msts_dc %>% autoplot()
+
+
+scotty_msts_df <- data.frame(
+  datetime = seq(from = ymd_hms("2017-10-01 00:00:00"), to = ymd_hms("2017-12-02 23:00:00"),by = "hour"),
+  demand = as.data.frame(scotty_msts)$demand)
+
+
+as.data.frame(scotty_msts_dc) %>% 
+  mutate(
+    seasonality = Seasonal24+Seasonal168,
+    hourly = hour(scotty_msts_df$datetime)
+  ) %>% 
+  distinct(hourly, seasonality) %>%
+  ggplot(aes(x = hourly, y = seasonality)) +
+  geom_col()+
+  theme_minimal()
+
+
+scotty_msts_df <- scotty_msts_df %>% 
+   mutate(seasadj = seasadj(scotty_msts_dc))
+
+length(seasadj(scotty_msts_dc))
+
+length(as.data.frame(scotty_msts_dc)$Seasonal24)
+
+
+as.data.frame(scotty_msts_dc) %>% 
+#scotty_msts_df %>% 
+  mutate( 
+    seasadj = seasadj(scotty_msts_dc)
+  ) %>% 
+  mutate(
+    day = wday(scotty_msts_df$datetime, label = TRUE, abbr = FALSE),
+    hour = as.factor(hour(scotty_msts_df$datetime))
+  ) %>% 
+  # group_by(day, hour) %>% 
+  # summarise(
+  #   seasonal = sum(Seasonal24 + Seasonal168)
+  # ) %>% 
+  ggplot(aes(x = hour, y = seasadj))+
+  geom_col(aes(fill = day))+
+  theme_minimal()
+
+```
+

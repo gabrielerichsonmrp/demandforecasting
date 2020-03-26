@@ -106,7 +106,7 @@ Problem yang diselesaikan yaitu membuat model untuk memprediksi demand transaksi
 
 ```{r}
 # Read Data Test
-scotty_test <- read.csv("data_input/scotty_ts/data-test.csv")
+scotty_test <- read_csv("data_input/scotty_ts/data-test.csv")
 glimpse(scotty_test)
 ```
 
@@ -115,7 +115,7 @@ Struktut data diatas belum sesuai. Mari sesuaikan struktur datanya dan meilhat r
 scotty_test <- scotty_test %>% 
    mutate(
       # Transaksi Per-Jam
-      datetime = floor_date(ymd_hms(datetime), unit="hour"),
+      datetime = floor_date(datetime, unit="hour"),
       demand = as.integer(demand)
    )
 summary(scotty_test)
@@ -129,7 +129,7 @@ Data diatas merupakan summary dari data yang hendak diprediksi. Berdasarkan info
 Berikut ini adalah data yang kita punya untuk melakukan analisa dan prediksi.
 
 ```{r}
-scotty_input <- read.csv("data_input/scotty_ts/data-train.csv")
+scotty_input <- read_csv("data_input/scotty_ts/data-train.csv")
 ```
 
 **5 Top Line Data**
@@ -203,7 +203,7 @@ Dataset yang dimiliki terdiri dari **90.133** observasi dan **16** variabel. Jik
 scotty_input <- scotty_input %>% 
    mutate(
       # Transaksi Per-Jam
-      datetime = floor_date(ymd_hms(start_time), unit="hour")
+      datetime = floor_date(start_time, unit="hour")
    ) %>% 
    group_by(src_sub_area, datetime) %>% 
    summarise(demand = length(status)) %>% 
@@ -486,12 +486,12 @@ Sesuai dengan masalah yang hendak diselesaikan yaitu melakukan prediksi demand p
 
 
 ```{r}
-scotty_ts_weekly <- scotty_input %>% 
-  filter(src_sub_area=="sxk9s") %>% 
-  select(demand) %>% 
-  ts(frequency = 24*7)
 
-plot_ts_weekly <- scotty_ts_weekly %>% 
+sxk9s <- scotty_input %>% filter(src_sub_area=="sxk9s") %>% select(-src_sub_area)
+
+sxk9s_ts_weekly <- sxk9s %>% .$demand %>% ts(frequency = 24*7)
+  
+plot_sxk9s_ts_weekly <- sxk9s_ts_weekly %>% 
   decompose() %>% 
    autoplot()+ 
    labs(
@@ -508,19 +508,18 @@ plot_ts_weekly <- scotty_ts_weekly %>%
           panel.spacing = unit(4, "pt")
           ) 
 
-ggplotly(plot_ts_weekly)
+ggplotly(plot_sxk9s_ts_weekly)
+
 ```
 
 Pada hasil decompose objek single sesonal time-series diatas, dapat dilihat pola tren masih belum smooth dan terkesan masih membentuk pola pada beberapa bagian, mungkin saja terdapat pola seasonal yang belum ditangkap. Sehingga, mari kita coba decompose menggunakan objek multiple seasonal time-series.
 
 
 ```{r}
-scotty_msts_weekly <- scotty_input %>% 
-  filter(src_sub_area=="sxk9s") %>% 
-  select(demand) %>% 
+sxk9s_msts_weekly <- sxk9s %>% .$demand %>% ts(frequency = 24*7) %>%  
   msts(seasonal.periods = c(24, 24*7))
 
-plot_msts_weekly <- scotty_msts_weekly %>% 
+plot_sxk9s_msts_weekly <- sxk9s_msts_weekly %>% 
    mstl() %>% 
    autoplot()+ 
    labs(
@@ -536,36 +535,49 @@ plot_msts_weekly <- scotty_msts_weekly %>%
           panel.spacing = unit(4, "pt")
           ) 
 
-ggplotly(plot_msts_weekly)
-
+ggplotly(plot_sxk9s_msts_weekly)
 
 ```
 
 Pada hasil decompose objek multiple seasonal time-series diatas, dapat dilihat pola tren terlihat lebih smooth dan tidak membentuk pola. Hal ini mengindikasikan data yang kita miliki merupakan objek multiple seasonal time-series.
 
-```{r}
+```{r, fig.width=9}
 
-data_msts <- msts(scotty_input  %>% 
+data_msts <- msts(scotty_input  %>%  filter(src_sub_area=="sxk9s") %>%
   select(demand), seasonal.periods = c(24, 24*7))
-data_msts_decompose <- mstl(data_msts, s.window = 24*7)
 
-as.data.frame(data_msts_decompose) %>% 
-  mutate(datetime = scotty_input$datetime) %>% 
+sxk9s_msts_weekly_dc <- mstl(sxk9s_msts_weekly)
+
+plot_seasonal_msts <- as.data.frame(sxk9s_msts_weekly_dc) %>% 
   mutate(
-    dow = wday(datetime, label = TRUE, abbr = FALSE),
+    datetime = sxk9s$datetime
+  ) %>% 
+  mutate(
+    day = wday(datetime, label = TRUE, abbr = FALSE),
     hour = as.factor(hour(datetime))
   ) %>% 
-  group_by(dow, hour) %>% 
-  summarise(seasonal = sum(Seasonal24 + Seasonal168)) %>% 
+  group_by(day, hour) %>% 
+  summarise(
+    seasonal = sum(Seasonal24 + Seasonal168)
+  ) %>% 
   ggplot(mapping = aes(x = hour, y = seasonal)) +
-  geom_col(aes(fill = dow)) +
+  geom_col(aes(fill = day)) +
   scale_fill_viridis_d(option = "plasma") +
-  theme_minimal() +
   labs(
-    title = "Seasonal Analysis based Daily and Weekly Demand"
-  )
+    title = "Seasonal Analysis based Daily and Weekly Demand in Sub-Area sxk9s",
+    fill = "Day of Week"
+  ) + 
+  theme_minimal() +
+  theme(
+        title = element_text(size=11),
+        axis.title=element_text(size=9, face="bold"),
+        axis.text.x=element_text(size=9),
+        axis.text.y=element_text(size=9),
+        legend.position = "right"
+        ) 
+
+ggplotly(plot_seasonal_msts)
 
 ```
-
 
 
