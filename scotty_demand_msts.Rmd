@@ -55,12 +55,15 @@ library(kableExtra)
 library(sqldf)
 library(gridExtra)
 library(grid)
+library(recipes)
+
 
 #Time Series 
 library(padr)
 library(TSstudio)
 library(forecast)
 library(tseries)
+library(magrittr)
 
 ```
 
@@ -264,14 +267,6 @@ Berikut ini visualisasi demand berdasarkan sub-area dari dari **2017-10-01 00:00
 ```{r, fig.width=8.5, fig.asp=0.75}
 scotty_demand <- scotty_input 
 
-mean_demand <- scotty_demand %>% 
-  group_by(src_sub_area) %>% 
-  summarise(mean = mean(demand))
-
-scotty_demand <- sqldf("SELECT SD.*, MD.mean
-                        FROM scotty_demand SD
-                        INNER JOIN mean_demand MD ON SD.src_sub_area = MD.src_sub_area")
-
 scotty_demand <- scotty_demand %>% 
     mutate(
       weekdays = weekdays(datetime),
@@ -306,11 +301,11 @@ ggplotly(p = plot_scotty_demand, tooltip="text") %>%
   layout(showlegend=FALSE)
 ```
 
-Pada grafik diatas dapat dilihat bahwa jumlah demand dari ketiga sub-area relatif sama dan juga terdapat **pola seasonal** meskipun belum terlihat jelas detailnya. Selain itu, juga dapat dilihat demand pada **Sabtu,4 November 2017 pukul 01.00** dan **Sabtu, 25 November 2017 pukul 01.00** jauh lebih tinggi dari hari lainnya. Sayangnya data yang kita miliki belum dapat menjawab hal tersebut, namun mari kita fokus ke demand. Berikut adalah demand per-harinya: 
+Pada grafik diatas dapat dilihat bahwa jumlah demand dari ketiga sub-area relatif sama dan juga terdapat **pola seasonal** meskipun belum terlihat jelas detailnya. Selain itu, juga dapat dilihat demand pada **Jumat,03 November 2017 pukul 18.00** dan **Jumat, 24 November 2017 pukul 18.00** jauh lebih tinggi dari hari lainnya. Sayangnya data yang kita miliki belum dapat menjawab hal tersebut, namun mari kita fokus ke demand. Berikut adalah demand per-harinya: 
 
 ```{r,fig.width=12.5}
 # Daily Demand
-polar_day <- scotty_input %>% 
+polar_day <- scotty_demand %>% 
   mutate(day=weekdays(datetime)) %>% 
   group_by(src_sub_area,day) %>% 
   summarise(demand_per_day=sum(demand)) %>% 
@@ -386,7 +381,7 @@ Grafik diatas memberikan informasi total demmand per-hari dari masing-masing Sub
 
 ```{r, fig.width=12}
 # Hourly Demand
-polar_hourly <- scotty_input %>% 
+polar_hourly <- scotty_demand %>% 
   mutate(hour=hour(datetime)) %>% 
   group_by(src_sub_area,hour) %>% 
   summarise(demand_per_hour=sum(demand)) %>% 
@@ -463,7 +458,7 @@ grid.arrange(hour_polar1,hour_polar2,hour_polar3, ncol = 3)
 
 ```
 
-Grafik diatas memberikan informasi total demmand per-jam dari masing-masing Sub-Area. Secara keseluruhan, ketiga Sub-Area menunjukan pola demand per-jam yang sama, dimana **total demand relatif tinggi dari pukul 17:00 hingga pukul 19:00** dan **total demmand relatif rendah dari pukul 01:00 hingga pukul 0:00**. Namun, yang berbeda adalah **total demand sub-area sxk9e juga cukup tinggi pada pukul 08:00**, hal ini berbeda dengan sub-area lainnya. 
+Grafik diatas memberikan informasi total demmand per-jam dari masing-masing Sub-Area. Secara keseluruhan, ketiga Sub-Area menunjukan pola demand per-jam yang sama, dimana **total demand relatif tinggi dari pukul 17:00 hingga pukul 19:00** dan **total demmand relatif rendah dari pukul 01:00 hingga pukul 05:00**. Namun, yang berbeda adalah **total demand sub-area sxk9e juga cukup tinggi pada pukul 08:00**, hal ini berbeda dengan sub-area lainnya. 
 
 
 ***
@@ -472,32 +467,27 @@ Grafik diatas memberikan informasi total demmand per-jam dari masing-masing Sub-
 
 ## Seasonal Analysis
 
-Sebelum melakukan forecasting kita perlu melakukan analisis seasonal dahulu untuk mengetahui objek timeseries kita merupakan single seasonal atau multiple seasonal. Hal ini berguna untuk menentukan metode forecasting yang tepat digunakan. Salah satu cara untuk melakukan analisis seasonal yaitu melakukan Decompose. Decompose merupakan tahapan dalam analisis time series yang digunakan untuk menguraikan beberapa komponen yang berupa:
+Sebelum melakukan forecasting kita perlu mengetahui informasi tren dan seasonal yang ada pada data. Salah satu cara untuk mengetahuinya yaitu melakukan Decompose. Decompose merupakan tahapan dalam analisis time series yang digunakan untuk menguraikan beberapa komponen yang berupa:<br>
 
-  * Trend : pola data secara general, cenderung untuk naik atau turun.
-
-  * Seasonal : pola musiman yang membentuk pola berulang pada periode waktu yang tetap.
-
-  * Residual/Error : pola yang tidak dapat ditangkap dalam trend dan seasona.
+  1. *Data* : data objek time-series yang diamati.<br>
+  2. *Trend* : pola data secara general, cenderung untuk naik atau turun.<br>
+  3. *Seasonal* : pola musiman yang membentuk pola berulang pada periode waktu yang tetap.<br>
+  4. *Residual/Error* : pola yang tidak dapat ditangkap dalam trend dan seasonal.<br>
   
-Jika pada hasil decompose, trend masih membentuk sebuah pola maka dapat dicurigai masih ada seasonality yang belum ditangkap. Seharusnya trend cenderung naik atau cendurung turun atau membentuk garis yang smooth. 
+Jika pada hasil decompose, trend masih membentuk sebuah pola maka dapat dicurigai masih ada seasonality yang belum ditangkap oleh frekuensi data. Seharusnya trend cenderung naik atau cendurung turun atau membentuk garis yang smooth. 
 
-Sesuai dengan masalah yang hendak diselesaikan yaitu melakukan prediksi demand per-jam pada masing-masing sub-area selama 1 minggu, maka mari kita lakukan decompose secara mingguan menggunakan single seasonal dan multiple seasonal. Berikut prosesnya:
+Sesuai dengan masalah yang hendak diselesaikan yaitu melakukan prediksi demand per-jam pada masing-masing sub-area selama 1 minggu, maka mari kita coba decompose secara harian dan mingguan terhadap salah satu sub-area.
 
 
-```{r}
-
-sxk9s <- scotty_input %>% filter(src_sub_area=="sxk9s") %>% select(-src_sub_area)
+```{r, fig.width=8}
+sxk9s <- scotty_input %>% filter(src_sub_area == "sxk9s") %>% select(-src_sub_area)
 
 sxk9s_ts_weekly <- sxk9s %>% .$demand %>% ts(frequency = 24*7)
   
 plot_sxk9s_ts_weekly <- sxk9s_ts_weekly %>% 
+  tail(24*7*4) %>% 
   decompose() %>% 
    autoplot()+ 
-   labs(
-      title = "Single Seasonal: Decomposition on Daily and Weekly in Sub-Area sxk9s",
-      subtitle = "Single Seasonal"
-    )+
     theme_minimal()+
     theme(
           title = element_text(size=11),
@@ -506,20 +496,35 @@ plot_sxk9s_ts_weekly <- sxk9s_ts_weekly %>%
           axis.text.y=element_text(size=9),
           legend.position = "none",
           panel.spacing = unit(4, "pt")
-          ) 
+          )
 
-ggplotly(plot_sxk9s_ts_weekly)
+
+ggplotly(plot_sxk9s_ts_weekly) %>% 
+  layout(title = list(text = paste0('Decomposition on Weekly in Sub-Area sxk9s',
+                                    '<br>',
+                                    '<sup>',
+                                    'Deompose single seasonal time-series object using frequency = 24*7 (Weekly)',
+                                    '</sup>')))
 
 ```
 
-Pada hasil decompose objek single sesonal time-series diatas, dapat dilihat pola tren masih belum smooth dan terkesan masih membentuk pola pada beberapa bagian, mungkin saja terdapat pola seasonal yang belum ditangkap. Sehingga, mari kita coba decompose menggunakan objek multiple seasonal time-series.
+Hasil decompose objek single sesonal time-series diatas menggunakan frekuensi Mingguan pada data 1 bulan terkahir. Beberapa informasi yang bisa kita dapat yaitu:<br>
+
+  1. Panel *data* merupakan data observasi time-series scotty pada data 1 bulan terkahir. Data ini sebenarnya sama seperti yang ditampilkan pada poin 5.1 Demand Analysis, namun karena pola kurang terlihat pada poin 5.1 tersebut maka kita perkecil analisanya menggunakan data 1 bulan terakhir.<br>
+  2. Panel *seasonal* merupakan komponen seasonal. Jika dilihat terdapat 4 bagian grafik yang memuncak paling tinggi dan yang lainnya rendah. Berhubung data yang kita time-series yang kita buat menggunakan frekuensi mingguan, maka hal ini dapat mengindikasikan bahwa pola seasonal yang terjadi sebenarnya secara harian dan mingguan.<br>
+  3. Panel *trend* merupakan komponen trend. Pola trend yang ditampilkan masih belum smooth dan terkesan masih membentuk pola pada beberapa bagian, mungkin saja terdapat pola seasonal yang belum ditangkap. Hal ini masuk akal dengan yang ditampilkan pada panel seasonal, sehingga mengindikasikan bahwa data kita merupakan *multiple seasonal time series object*.<br> 
+  4. Panel *Remainder/Error* merupakan komponen error yang menunjukan pola yang tidak dapat ditangkap dalam trend dan seasonal.<br>
 
 
-```{r}
-sxk9s_msts_weekly <- sxk9s %>% .$demand %>% ts(frequency = 24*7) %>%  
+Hasil decompose diatas mengindikasikan bahwa data time-series yang kita observasi memiliki pola *Multi-Seasonal*. Berdasarkan pola seasonalnya menunjukan bahwa data ini memiliki seasonal harian dan mingguan, sehingga mari kita mebuat data multiple seasonal time series dan melakukan decompose kembali.
+
+
+```{r, fig.width=8}
+sxk9s_msts_weekly <- sxk9s %>% .$demand %>%  
   msts(seasonal.periods = c(24, 24*7))
 
 plot_sxk9s_msts_weekly <- sxk9s_msts_weekly %>% 
+  tail(24*7*4) %>% 
    mstl() %>% 
    autoplot()+ 
    labs(
@@ -535,22 +540,24 @@ plot_sxk9s_msts_weekly <- sxk9s_msts_weekly %>%
           panel.spacing = unit(4, "pt")
           ) 
 
-ggplotly(plot_sxk9s_msts_weekly)
+ggplotly(plot_sxk9s_msts_weekly) %>% 
+    layout(title = list(text = paste0('Decomposition on Daily & Weekly in Sub-Area sxk9s',
+                                    '<br>',
+                                    '<sup>',
+                                    'Deompose multiple seasonal time-series object using seasonal.periods = c(24, 24*7) (Daily & Weekly)',
+                                    '</sup>')))
 
 ```
 
-Pada hasil decompose objek multiple seasonal time-series diatas, dapat dilihat pola tren terlihat lebih smooth dan tidak membentuk pola. Hal ini mengindikasikan data yang kita miliki merupakan objek multiple seasonal time-series.
+Pada hasil decompose objek multiple seasonal time-series diatas, dapat dilihat pola tren terlihat lebih smooth dan tidak membentuk pola. Hal ini mengindikasikan bahwa kemungkinan besar seluruhan seasonal sudah ditangkap. Untuk lebih jelasnya, berikut ini visualisasi seasonal perjam-nya dalam harian dan mingguan pada data observasi kita:
 
-```{r, fig.width=9}
 
-data_msts <- msts(scotty_input  %>%  filter(src_sub_area=="sxk9s") %>%
-  select(demand), seasonal.periods = c(24, 24*7))
-
-sxk9s_msts_weekly_dc <- mstl(sxk9s_msts_weekly)
+```{r, fig.width=8}
+sxk9s_msts_weekly_dc <- mstl(sxk9s_msts_weekly %>% tail(24*7*4))
 
 plot_seasonal_msts <- as.data.frame(sxk9s_msts_weekly_dc) %>% 
   mutate(
-    datetime = sxk9s$datetime
+    datetime = sxk9s %>% tail(24*7*4) %>% .$datetime
   ) %>% 
   mutate(
     day = wday(datetime, label = TRUE, abbr = FALSE),
@@ -564,7 +571,7 @@ plot_seasonal_msts <- as.data.frame(sxk9s_msts_weekly_dc) %>%
   geom_col(aes(fill = day)) +
   scale_fill_viridis_d(option = "plasma") +
   labs(
-    title = "Seasonal Analysis based Daily and Weekly Demand in Sub-Area sxk9s",
+    title = "Seasonal Analysis based Daily and Weekly in Sub-Area sxk9s",
     fill = "Day of Week"
   ) + 
   theme_minimal() +
@@ -578,6 +585,243 @@ plot_seasonal_msts <- as.data.frame(sxk9s_msts_weekly_dc) %>%
 
 ggplotly(plot_seasonal_msts)
 
+```
+
+
+# Cross Validation
+Dalam case ini kita akan mencoba membuat beberapa model, tentunya kita akan membagi seluruh data yang kita punya menjadi data train dan data test. Problem yang diselesaikan yaitu memprediksi demand perjam dalam 1 minggu sehingga saya akan membagi data test menggunakan data 1 minggu terakhir dan sisanya sebagai data train. Berikut interval waktu di data train dan data test:
+
+```{r}
+scotty_data <- scotty_input
+
+#data test 1 minggu
+test_size <- 24*7
+
+test_end <- max(scotty_data$datetime)
+test_start <- test_end - hours(test_size) + hours(1)
+
+train_end <- test_start - hours(1)
+train_start <- min(scotty_data$datetime)
+
+# get the interval of each samples
+intrain <- interval(train_start, train_end)
+intest <- interval(test_start, test_end)
+
+data.frame("interval_data_train"=intrain,
+              "interval_data_test"=intest)
+```
+
+**Berikut ini visualisasi pembagian data train dan data test:**
+
+```{r, fig.width=8}
+ggplotly(
+ scotty_data %>%
+  mutate(sample = case_when(
+    datetime %within% intrain ~ "train",
+    datetime %within% intest ~ "test"
+  )) %>%
+  drop_na() %>%
+  mutate(
+    sample = factor(sample, levels = c("train", "test"))
+  ) %>%
+  ggplot(aes(x = datetime, y = demand, colour = sample)) +
+    geom_line() +
+    labs(
+      x = NULL, 
+      y = NULL,
+      title = "Demand by Sub-Area on Data Train Vs Data Test"
+    ) +
+    scale_x_datetime(date_breaks = "7 day", labels = date_format("%b %d"))+
+    facet_wrap(~ src_sub_area, scale = "free", ncol = 1) +
+    theme_minimal()+
+    theme(
+      legend.position = "bottom", 
+      plot.title = element_text(hjust = 0.5),
+      panel.spacing = unit(1, "lines"))+
+    mycolor_color()
+  ) %>% 
+  layout(
+    xaxis = list(showticklabels = FALSE),
+    legend=list(orientation = "h",
+                   y = -0.1, x = 0.4)
+  )
+
+
+```
+
+
+# Data Scalling
+Seperti yang kita lihat pada visualisasi sebelumnya, dimana jumlah demand di 3 Sub-Area berbeda-beda dan pada waktu-waktu tertentu memiliki selisih jauh berbeda. Hal ini dapat mengindikasikan outlier, sehingga perlu dilakukan scaling data train pada masing-masing Sub-Area sebelum memulai pemodelan supaya tidak sensitif pada data outlier. Berikut prosesnya:
+
+**1. Convert data to wide format**
+```{r}
+# Spread data menjadi 3 Sub-Area 
+scotty_data <- scotty_data %>%
+  spread(src_sub_area, demand)
+
+head(scotty_data)
+
+```
+
+**2. Scalling data**
+```{r}
+# recipes: square root, center, scale
+rec <- recipe(~ ., filter(scotty_data, datetime %within% intrain)) %>%
+  step_sqrt(all_numeric()) %>%
+  step_center(all_numeric()) %>%
+  step_scale(all_numeric()) %>%
+  prep()
+
+# preview the bake results
+scotty_data <- bake(rec, scotty_data)
+scotty_data
+```
+
+**3. Convert datato long format**
+```{r}
+scotty_data <- scotty_data %>% 
+  gather(src_sub_area, demand, -datetime)
+head(scotty_data)
+```
+
+
+Data yang sudah di scalling tentunya perlu di kembalikan lagi seperi semula, maka dibuat fungsi:
+
+```{r}
+reverse <- function(vector, recipe, varname) {
+  # store recipe values
+  rec_center <- recipe$steps[[2]]$means[varname]
+  rec_scale <- recipe$steps[[3]]$sds[varname]
+  
+  # convert back based on the recipe
+  results <- (vector * rec_scale + rec_center) ^ 2
+  
+  # add additional adjustment if necessary
+  results <- round(results)
+  
+  # return the results
+  results
+}
+```
+
+
+# NESTED MODEL FITTING AND FORECASTING
+
+```{r}
+scotty_data %<>%
+  mutate(sample = case_when(
+    datetime %within% intrain ~ "train",
+    datetime %within% intest ~ "test"
+  )) %>%
+  drop_na()
+  
+scotty_data
+```
+
+
+```{r}
+scotty_data <- scotty_data %>%
+  group_by(src_sub_area, sample) %>%
+  nest(.key = "data") %>%
+  spread(sample, data)
+
+scotty_data
+```
+
+
+# PREPARING THE DATA MODEL LIST
+
+```{r}
+# Membuat list model data
+data_funs <- list(
+  ts = function(x) ts(x$demand, frequency = 24*7),
+  msts = function(x) msts(x$demand, seasonal.periods = c(24, 24 * 7))
+)
+
+data_funs
+```
+
+
+```{r}
+# convert to nested
+data_funs <- data_funs %>%
+  rep(length(unique(scotty_data$src_sub_area))) %>%
+  enframe("data_fun_name", "data_fun") %>%
+  mutate(src_sub_area =
+    sort(rep(unique(scotty_data$src_sub_area), length(unique(.$data_fun_name))))
+  )
+
+data_funs
+```
+
+```{r}
+scotty_data <- scotty_data %>%
+  left_join(data_funs)
+```
+
+
+# PREPARING THE TIME SERIES MODEL LIST
+```{r}
+# models list
+models <- list(
+  ets = function(x) ets(x),
+   holt.winter = function(x) HoltWinters(x,seasonal = "additive"),
+  stlm = function(x) stlm(x),
+  auto.arima = function(x) auto.arima(x),
+  tbats = function(x) tbats(x, use.box.cox = FALSE, 
+                  use.trend = TRUE, 
+                  use.damped.trend = TRUE,
+                  use.parallel = FALSE)
+)
+
+
+
+models <- models %>%
+  rep(length(unique(scotty_data$src_sub_area))) %>%
+  enframe("model_name", "model") %>%
+  mutate(src_sub_area =
+      sort(rep(unique(scotty_data$src_sub_area), length(unique(.$model_name))))
+  )
+
+models
+
+```
+
+And finally, we can join the result into our nested data. Note that we could also apply some rule here. For example, if I don’t want to have ets() and auto.arima() for data with msts class–since they are not suitable for multiple seasonality time series–we can use filter to remove them out:
+
+```{r}
+# combine with models
+scotty_data <- scotty_data %>%
+  left_join(models) %>%
+  filter(
+    !(model_name == "ets" & data_fun_name == "msts"),
+    !(model_name == "auto.arima" & data_fun_name == "msts")
+  )
+
+```
+
+# EXECUTE THE NESTED FITTING
+
+```{r}
+scotty_ts_model <- scotty_data %>%
+  mutate(
+    params = map(train, ~ list(x = .x)),
+    data = invoke_map(data_fun, params),
+    params = map(data, ~ list(x = .x)),
+    fitted = invoke_map(model, params)
+  ) %>%
+  select(-data, -params)
+
+wd <-  as.character(getwd())
+saveRDS(object=scotty_ts_model, file=paste(paste(wd,"/dscotty_ts_model/",sep = ""),"scotty_ts_model.rds",sep=""))
+
+```
+
+
+```{r}
+scotty_ts_model <- saveRDS(data, "data_input/scotty_ts_model.rds")
+  
+scotty_ts_model
 ```
 
 
