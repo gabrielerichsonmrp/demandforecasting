@@ -17,6 +17,7 @@ output:
 ---
 
 Reference:
+https://algotech.netlify.com/blog/multiple-seasonal/
 [Forecasting: Principles and Practice](https://otexts.com/fpp2/)<br>
 [Exploring & Visualizing Time Series](https://afit-r.github.io/ts_exploration)<br>
 
@@ -740,7 +741,7 @@ Data diatas merupakan format nested table, variabel **src_sub_area** merupakan n
 Pada bagian Seasonal Analysis, kita sudah melihat bahwa data kita merupakan Mutiple Seasonal sehingga data kita akan lebih cocok apabila dikonversi keformat **msts** dengan seasonal harian dan mingguan, namun dengan menggunakan konsep nested table kita juga dapat mengecek dengan mudah apabila data kita dikonversi keformat **ts**. Sehingga, kita akan mencoba melakukan pemodelan menggunakan **single seasonal time-series dengan frequency harian** dan **multiple seasonal time-series dengan seasonal harian dan mingguan** pada masing-masing Sub-Area.
 
 ```{r}
-# Membuat list model data time-series
+# Membuat list objek data time-series
 data_model <- list(
   # single seasonal time-series dengan frequency harian
   ts = function(x) ts(x$demand, frequency = 24), 
@@ -812,8 +813,7 @@ models <- list(
   #TBATS
   tbats = function(x) tbats(x, use.box.cox = FALSE, 
                   use.trend = TRUE, 
-                  use.damped.trend = TRUE,
-                  use.parallel = FALSE)
+                  use.damped.trend = TRUE)
 )
 
 #Nested Model by sub-area
@@ -840,10 +840,11 @@ scotty_models
 ```
 
 
+
 ## Execute Nested Model Fitting
 
 Chunk di bawah ini digunakan untuk menggenerate seluruh model yang dibuat. Chunk ini di-set **eval=FALSE** karena cukup memakan waktu. Hasil generate model disimpan dengan format file .rds.
-```{r, eval=FALSE}
+```{r}
 scotty_ts_model <- scotty_models %>%
   mutate(
     params = map(train, ~ list(x = .x)),
@@ -864,6 +865,7 @@ Mari kita breakdown dulu. Nested table yang sebelumnya kita buat terdiri dari 3 
 ```{r}
 scotty_ts_model <- readRDS("scotty_ts_model/scotty_ts_model.rds")
 head(scotty_ts_model)
+
 ```
 
 
@@ -884,8 +886,6 @@ scotty_model_eval <- scotty_ts_model %>%
                                                estimate = revert_back(.x$mean,scalling,src_sub_area)))
     ) %>% 
   arrange(src_sub_area, mae_test, mae_train) 
-
-
 
 
 scotty_model_eval %>% select(src_sub_area,data_fun_name, model_name,fitted,mae_train,mae_test)
@@ -999,7 +999,7 @@ scotty_final_model <- scotty_best_model %>%
 
 Chunk di bawah ini digunakan untuk menggenerate **final model** yang dibuat. Chunk ini di-set **eval=FALSE** karena cukup memakan waktu. Hasil generate model disimpan dengan format file .rds.
 
-```{r, eval=FALSE}
+```{r}
 #Execute Nested Final Model
 scotty_final_model <- scotty_final_model %>%
   mutate(
@@ -1018,7 +1018,6 @@ saveRDS(object=final_models, file=paste(paste(wd,"/scotty_ts_model/",sep = ""),"
 ***
 
 <br>
-
 
 # Forecasting Result
 
@@ -1040,7 +1039,6 @@ next_week_prediction <- scotty_final_model %>%
     ))
   )
 
-
 # Extract Forecasting Result using unnest
 next_week_prediction_result <- next_week_prediction %>% 
   select(src_sub_area, actual = fulldata, forecast) %>%
@@ -1048,12 +1046,17 @@ next_week_prediction_result <- next_week_prediction %>%
   unnest(value) %>% 
   mutate(demand = revert_back(demand,scalling,src_sub_area)) 
 
+# result_submit <- next_week_prediction_result %>%
+#    filter(key == "forecast") %>%
+#    select(-key)
+# 
+# wd <-  as.character(getwd())
+# write_csv(result_submit,paste(paste(wd,"/data_result/",sep = ""),"submit-28032020-001.csv",sep=""))
 
 # Display Forecasting Result  
 next_week_prediction_result %>%
  filter(key=="forecast") %>% 
  spread(src_sub_area,demand) 
-
 
 ```
 
@@ -1111,3 +1114,29 @@ ggplotly(
 ```
 
 
+
+# Conclusion
+```{r}
+# conc <- scotty_model_eval %>%
+#   group_by(src_sub_area) %>%
+#   filter(mae_test == min(mae_test)) %>%
+#   ungroup()
+
+checkresiduals(scotty_final_model$fitted[[1]])
+checkresiduals(scotty_final_model$fitted[[2]])
+checkresiduals(scotty_final_model$fitted[[3]])
+
+acf(residuals(scotty_final_model$fitted[[1]]))
+acf(residuals(scotty_final_model$fitted[[2]]))
+acf(residuals(scotty_final_model$fitted[[3]]))
+
+
+Box.test(x = residuals(scotty_final_model$fitted[[1]]), type = "Ljung-Box")
+Box.test(x = residuals(scotty_final_model$fitted[[2]]), type = "Ljung-Box")
+Box.test(x = residuals(scotty_final_model$fitted[[3]]), type = "Ljung-Box")
+
+shapiro.test(x = residuals(scotty_final_model$fitted[[1]]))
+shapiro.test(x = residuals(scotty_final_model$fitted[[2]]))
+shapiro.test(x = residuals(scotty_final_model$fitted[[3]]))
+
+```
