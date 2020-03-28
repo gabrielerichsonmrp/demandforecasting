@@ -1,6 +1,7 @@
 ---
-title: "Demand Forecasting of Scotty Ride-sharing Service"
+title: "Hourly Demand Forecasting of Scotty Ride-sharing Service"
 author: "by Gabriel Erichson"
+date: "3/28/2020"
 output:
   html_document:
     df_print: paged
@@ -16,10 +17,7 @@ output:
   pdf_document: default
 ---
 
-Reference:
-https://algotech.netlify.com/blog/multiple-seasonal/
-[Forecasting: Principles and Practice](https://otexts.com/fpp2/)<br>
-[Exploring & Visualizing Time Series](https://afit-r.github.io/ts_exploration)<br>
+Github : [Hourly Demand Forecasting of Scotty Ride-sharing Service](https://github.com/gabrielerichsonmrp/demandforecasting)
 
 <head>
 		<title>"Demand Forecasting</title>
@@ -90,12 +88,28 @@ mycolorfill = c(
   dark_choc="#6b5340",
   light_orange="#ff7c43"
 )
+##ff7c43
+my_viridis = c(
+"#453781FF",
+"#404788FF",
+"#39568CFF",
+"#33638DFF",
+"#2D708EFF",
+"#287D8EFF",
+"#238A8DFF",
+"#1F968BFF",
+"#20A387FF",
+"#29AF7FFF",
+"#3CBB75FF",
+"#55C667FF"
+)
 
 
-viz_palette(mycolorfill)
+viz_palette(my_viridis)
 mycolor_fill  <- get_scale_fill(get_pal(mycolorfill))
 mycolor_color <- get_scale_color(get_pal(mycolorfill))
 mycolor_hex <- get_hex(mycolorfill)
+my_viridis_color <- get_scale_color(get_pal(my_viridis))
 
 ```
 
@@ -572,7 +586,7 @@ plot_seasonal_msts <- as.data.frame(sxk9s_msts_weekly_dc) %>%
   ) %>% 
   ggplot(mapping = aes(x = hour, y = seasonal)) +
   geom_col(aes(fill = day)) +
-  scale_fill_viridis_d(option = "plasma") +
+  scale_fill_viridis_d(option = "VIRIDIS") +
   labs(
     title = "Seasonal Analysis based Daily and Weekly in Sub-Area sxk9s",
     fill = "Day of Week"
@@ -613,7 +627,6 @@ intest <- interval(test_start, test_end)
 data.frame("interval_data_train"=intrain,
               "interval_data_test"=intest)
 
-<<<<<<< HEAD
 scotty_data <- scotty_data %>% 
   mutate(sample = case_when(
         datetime %within% intrain ~ "train",
@@ -622,25 +635,15 @@ scotty_data <- scotty_data %>%
   mutate(sample = factor(sample, levels = c("train", "test")))
   
 #head(scotty_data)
-=======
-
-scotty_data <- scotty_data %>% 
-  mutate(data_sample = case_when(
-        datetime %within% intrain ~ "train",
-        datetime %within% intest ~ "test")) %>% 
-  drop_na() %>% 
-  mutate(data_sample = factor(data_sample, levels = c("train", "test")))
-  
-head(scotty_data)
->>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 
 ```
 
 **Berikut ini visualisasi pembagian data train dan data test dalam deret waktu:**
 
 ```{r, fig.width=8}
+viz_scotty_data <- scotty_data
 ggplotly(
- scotty_data %>% 
+ viz_scotty_data %>% 
   ggplot(aes(x = datetime, y = demand, colour = sample)) +
     geom_line() +
     labs(
@@ -655,7 +658,7 @@ ggplotly(
       legend.position = "bottom", 
       plot.title = element_text(hjust = 0.5),
       panel.spacing = unit(1, "lines"))+
-    mycolor_color()
+ my_viridis_color()
   ) %>% 
   layout(
     xaxis = list(showticklabels = FALSE),
@@ -673,6 +676,7 @@ Dapat dilihat pada visualisasi di atas, dimana jumlah demand di 3 Sub-Area berbe
 # Spread data menjadi 3 Sub-Area 
 scotty_data <- scotty_data %>%
   spread(src_sub_area, demand)
+
 head(scotty_data)
 
 ```
@@ -689,13 +693,6 @@ scalling <- recipe(~ ., filter(scotty_data, datetime %within% intrain)) %>%
 # preview the bake results
 scotty_data <- bake(scalling, scotty_data)
 
-<<<<<<< HEAD
-=======
-**3. Convert datato long format**
-```{r}
-scotty_data <- scotty_data %>% 
-  gather(src_sub_area, demand, -datetime, -data_sample)
->>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 head(scotty_data)
 ```
 
@@ -731,7 +728,6 @@ variabel **src_sub_area** merupakan data nama dari Sub-Area.
 variabel **demand** merupakan data demand.
 
 ```{r}
-<<<<<<< HEAD
 scotty_data <- scotty_data %>% 
   gather(src_sub_area, demand, -datetime, -sample)
 
@@ -744,30 +740,16 @@ head(scotty_data)
 Pada pemodelan ini kita akan menggunakan fungsi `purr` dan untuk menggunakan fungsi `purr`, maka kita perlu merubah dataset kita yang sebelumnya berbentuk *table* menjadi *nested table*, berikut lebih jelasnya:
 
 ```{r}
-=======
->>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 scotty_data <- scotty_data %>%
-  group_by(src_sub_area, data_sample) %>%
+  group_by(src_sub_area, sample) %>%
   nest(.key = "data") %>%
-  spread(data_sample, data)
+  spread(sample, data)
 
 scotty_data
-
 ```
 
 Data diatas merupakan format nested table, variabel **src_sub_area** merupakan nama sub-area, variabel **train** merupakan bentuk nested table yang isinya merupakan data **datetime dan demand untuk data train**, dan variabel **test** juga merupakan bentuk nested table yang isinya merupakan data **datetime dan demand untuk data test**.
 
-<<<<<<< HEAD
-=======
-# PREPARING THE DATA MODEL LIST
-
-```{r}
-# Membuat list model data
-data_funs <- list(
-  ts = function(x) ts(x$demand, frequency = 24),
-  msts = function(x) msts(x$demand, seasonal.periods = c(24, 24*7))
-)
->>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 
 ## Data Time-Series Object List
 
@@ -829,7 +811,6 @@ Berdasarkan proses decompose, kita ketahui bahwa objek time-series ini memiliki 
 #models list
 models <- list(
   ets = function(x) ets(x),
-<<<<<<< HEAD
   #Model Holt’s Winter Exponential Smoothing
   holt_winters = function(x) HoltWinters(x),
   # Seasonal ARIMA (SARIMA)
@@ -845,13 +826,6 @@ models <- list(
   stlm_arima = function(x) stlm(x, method="arima"),
   
   #TBATS
-=======
-  holt.winter = function(x) HoltWinters(x,seasonal = "additive"),
-  auto.arima = function(x) auto.arima(x, seasonal = TRUE),
-  stlm = function(x) stlm(x),
-  stlm_ets = function(x) stlm(x, method="ets"),
-  stlm_arima = function(x) stlm(x, method="arima"),
->>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
   tbats = function(x) tbats(x, use.box.cox = FALSE, 
                   use.trend = TRUE, 
                   use.damped.trend = TRUE)
@@ -885,7 +859,7 @@ scotty_models
 ## Execute Nested Model Fitting
 
 Chunk di bawah ini digunakan untuk menggenerate seluruh model yang dibuat. Chunk ini di-set **eval=FALSE** karena cukup memakan waktu. Hasil generate model disimpan dengan format file .rds.
-```{r}
+```{r, eval=FALSE}
 scotty_ts_model <- scotty_models %>%
   mutate(
     params = map(train, ~ list(x = .x)),
@@ -948,7 +922,6 @@ scotty_forecast <- scotty_model_eval %>%
     key = paste(data_fun_name, model_name, sep = "-")
   )
 
-<<<<<<< HEAD
 # Extract Value using unnest
 scotty_forecast <- scotty_forecast %>% 
   select(src_sub_area, key, actual = test, forecast) %>%
@@ -968,9 +941,6 @@ scotty_forecast <- scotty_forecast %>%
 scotty_forecast %>%
  select(-popup) %>% 
  spread(key,demand) 
-=======
-head(scotty_data)
->>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 ```
 
 <br>
@@ -979,7 +949,6 @@ head(scotty_data)
 
 ```{r, fig.width=8}
 
-<<<<<<< HEAD
 plot_scotty_forecast <- scotty_forecast %>% 
   ggplot(aes(x = datetime, y = demand)) +
     #geom_line(data = scotty_input,aes(y = demand),alpha = 0.2,size = 0.8)+
@@ -1003,7 +972,7 @@ plot_scotty_forecast <- scotty_forecast %>%
     theme(legend.position = "none", 
       plot.title = element_text(hjust = 0.5),
       panel.spacing = unit(1, "lines"))+
-    mycolor_color()
+    scale_color_viridis_d()
 
 ggplotly(plot_scotty_forecast, tooltip = "text", height = 560) %>% 
   animation_opts(
@@ -1037,10 +1006,6 @@ Sebelumnya kita menggunakan data train dan melakukan splitting menjadi tranning 
 ```{r}
 # Menggabungkan data test dan train
 scotty_final_model <- scotty_best_model %>%
-=======
-```{r, eval=FALSE}
-scotty_ts_model <- scotty_data %>%
->>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
   mutate(
     fulldata = map2(train, test, ~ bind_rows(.x, .y))) %>%
   select(src_sub_area, fulldata, everything(), -train, -test)
@@ -1049,7 +1014,7 @@ scotty_ts_model <- scotty_data %>%
 
 Chunk di bawah ini digunakan untuk menggenerate **final model** yang dibuat. Chunk ini di-set **eval=FALSE** karena cukup memakan waktu. Hasil generate model disimpan dengan format file .rds.
 
-```{r}
+```{r, eval=FALSE}
 #Execute Nested Final Model
 scotty_final_model <- scotty_final_model %>%
   mutate(
@@ -1060,17 +1025,9 @@ scotty_final_model <- scotty_final_model %>%
   ) %>%
   select(-data, -params)
 
-<<<<<<< HEAD
 final_models <- scotty_final_model
 wd <-  as.character(getwd())
 saveRDS(object=final_models, file=paste(paste(wd,"/scotty_ts_model/",sep = ""),"scotty_final_model.rds",sep=""))
-=======
-models <- scotty_ts_model
-#scotty_ts_model <- saveRDS(models, "scotty_ts_model.RDS")
-wd <-  as.character(getwd())
-saveRDS(object=models, file=paste(paste(wd,"/scotty_ts_model/",sep = ""),"scotty_ts_model.rds",sep=""))
-
->>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 ```
 
 ***
@@ -1082,7 +1039,6 @@ saveRDS(object=models, file=paste(paste(wd,"/scotty_ts_model/",sep = ""),"scotty
 Berdasarkan problem yang ingin diselesaikan maka kita perlu akan melakukan prediksi **demand per-jam** di sub area **sxk97, sxk9e dan sxk9** dalam rentang waktu **1 minggu kedepan** atau dari **2017-12-03 00:00 sampai 2017-12-09 23:00**. Berikut ini hasil forecastingnya:
 
 ```{r}
-<<<<<<< HEAD
 # Read Model
 scotty_final_model <- readRDS("scotty_ts_model/scotty_final_model.rds")
 
@@ -1105,12 +1061,12 @@ next_week_prediction_result <- next_week_prediction %>%
   unnest(value) %>% 
   mutate(demand = revert_back(demand,scalling,src_sub_area)) 
 
-# result_submit <- next_week_prediction_result %>%
-#    filter(key == "forecast") %>%
-#    select(-key)
-# 
-# wd <-  as.character(getwd())
-# write_csv(result_submit,paste(paste(wd,"/data_result/",sep = ""),"submit-28032020-001.csv",sep=""))
+result_submit <- next_week_prediction_result %>%
+    filter(key == "forecast") %>%
+    select(-key)
+ 
+ wd <-  as.character(getwd())
+ write_csv(result_submit,paste(paste(wd,"/data_result/",sep = ""),"gehm_submit-28032020-001.csv",sep=""))
 
 # Display Forecasting Result  
 next_week_prediction_result %>%
@@ -1152,7 +1108,7 @@ plot_viz_forecast <- vis_forecast %>%
       legend.position = "bottom", 
       plot.title = element_text(hjust = 0.5),
       panel.spacing = unit(1, "lines"))+
-    mycolor_color()
+    my_viridis_color()
 
 
 ggplotly(
@@ -1174,51 +1130,94 @@ ggplotly(
 
 
 
-# Conclusion
+# Conclusion 
+
+## Assumption Checking {.tabset}
+**Assumption Checking: Auto Correlation and Normality residual**
+
+### Sub-Area sxk97
+**Residual from TBATS in Sub-Area sxk97**
 ```{r}
-# conc <- scotty_model_eval %>%
-#   group_by(src_sub_area) %>%
-#   filter(mae_test == min(mae_test)) %>%
-#   ungroup()
+checkresiduals(scotty_final_model$fitted[[1]],plot=TRUE, main="Residual from TBATS in Sub-Area sxk97") 
+```
 
-checkresiduals(scotty_final_model$fitted[[1]])
-checkresiduals(scotty_final_model$fitted[[2]])
-checkresiduals(scotty_final_model$fitted[[3]])
+### Sub-Area sxk9e
+**Residual from TBATS in Sub-Area sxk9e**
+```{r}
+checkresiduals(scotty_final_model$fitted[[2]],plot=TRUE, main="Residual from TBATS in Sub-Area sxk9e") 
+```
 
-acf(residuals(scotty_final_model$fitted[[1]]))
-acf(residuals(scotty_final_model$fitted[[2]]))
-acf(residuals(scotty_final_model$fitted[[3]]))
+### Sub-Area sxk9s
+**Residual from TBATS in Sub-Area sxk9s**
+```{r}
+checkresiduals(scotty_final_model$fitted[[3]],plot=TRUE,df=NULL, main="Residual from TBATS in Sub-Area sxk9s") 
+```
 
 
-Box.test(x = residuals(scotty_final_model$fitted[[1]]), type = "Ljung-Box")
-Box.test(x = residuals(scotty_final_model$fitted[[2]]), type = "Ljung-Box")
-Box.test(x = residuals(scotty_final_model$fitted[[3]]), type = "Ljung-Box")
+```{r,fig.width=12, fig.asp=0.4, eval=FALSE, include=FALSE}
+par(mfrow=c(1,3), cex=1.1)
+acf(residuals(scotty_final_model$fitted[[1]]),main="Auto Correlation from TBATS in Sub-Area sxk97")
+acf(residuals(scotty_final_model$fitted[[2]]),main="Sub-Area sxk9e")
+acf(residuals(scotty_final_model$fitted[[3]]),main="Sub-Area sxk9s")
 
+# Box.test(x = residuals(scotty_final_model$fitted[[1]]), type = "Ljung-Box")
+# Box.test(x = residuals(scotty_final_model$fitted[[2]]), type = "Ljung-Box")
+# Box.test(x = residuals(scotty_final_model$fitted[[3]]), type = "Ljung-Box")
+
+```
+
+
+
+
+```{r, eval=FALSE,include=FALSE}
+#**Normality residual**
+
+# resid(residuals(scotty_final_model$fitted[[1]]))
 shapiro.test(x = residuals(scotty_final_model$fitted[[1]]))
 shapiro.test(x = residuals(scotty_final_model$fitted[[2]]))
 shapiro.test(x = residuals(scotty_final_model$fitted[[3]]))
-
-```
-=======
-scotty_ts_model <- readRDS("scotty_ts_model/scotty_ts_model.rds")
-head(scotty_ts_model)
-```
-
-
-# Evaluation
-
-```{r}
-scotty_model_eval <- scotty_ts_model %>% 
-  mutate(
-    MAE_error_test = map(fitted, ~ forecast(.x, h = test_size)) %>%
-                     map2_dbl(test, ~ mae_vec(truth = reverse(.y$demand,rec,src_sub_area), 
-                                              estimate = reverse(.x$mean,rec,src_sub_area))),
-    MAE_error_train = map(fitted, ~ forecast(.x, h = test_size)) %>%
-                      map2_dbl(train, ~ mae_vec(truth = reverse(.y$demand,rec,src_sub_area), 
-                                                estimate = reverse(.x$fitted,rec,src_sub_area)))
-    ) %>% 
-  arrange(src_sub_area, MAE_error_test,MAE_error_train) 
+# 
+# library(DMwR)
+# 
+# accmeasures1=regr.eval(test_series, forecast1$pred)
+# 
+# scotty_final_model$fitted[[1]]$fitted.values
+# 
+# 
+# 
+# assmp <- scotty_model_eval %>%
+#   group_by(src_sub_area) %>%
+#   filter(mae_test == min(mae_test)) %>%
+#   ungroup()
+# 
+# regr.eval(test_series, forecast1$pred)
 
 ```
 
->>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
+<br>
+
+## Summary
+
+
+
+
+
+***
+
+<br>
+
+
+# Reference
+
+[Hyndman, R.J., & Athanasopoulos, G. (2018) Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia.](https://otexts.com/fpp2/complexseasonality.html)[Diakses 24-27 Maret 2020]
+
+[Herlambang, R. Dimas Baghas. 2019. PURRR-Operly Fitting Multiple Time Series](https://algotech.netlify.com/blog/purrr-operly-fitting-multiple-time-series-model/) [Diakses 24-27 Maret 2020] <br>
+
+[Prabhakaran, S. 2016. Time Series Analysis](http://r-statistics.co/Time-Series-Analysis-With-R.html)[Diakses 25 Maret 2020]
+
+[Prastiwi, Ajeng. 2019. Forecasting Time Series with Multiple Seasonal](https://algotech.netlify.com/blog/multiple-seasonal/)[Diakses 26 Maret 2020]<br>
+
+[Dancho, M. 2019. Forecasting Using Multiple Models](https://cran.rstudio.com/web/packages/sweep/vignettes/SW02_Forecasting_Multiple_Models.html)[Diakses 26 Maret 2020]<br>
+
+[Sievert, C. 2019. Interactive web-based data visualization with R, plotly, and shiny](https://plotly-r.com/animating-views.html)[Diakses 27 Maret 2020]
+
