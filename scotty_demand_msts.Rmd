@@ -613,6 +613,7 @@ intest <- interval(test_start, test_end)
 data.frame("interval_data_train"=intrain,
               "interval_data_test"=intest)
 
+<<<<<<< HEAD
 scotty_data <- scotty_data %>% 
   mutate(sample = case_when(
         datetime %within% intrain ~ "train",
@@ -621,6 +622,17 @@ scotty_data <- scotty_data %>%
   mutate(sample = factor(sample, levels = c("train", "test")))
   
 #head(scotty_data)
+=======
+
+scotty_data <- scotty_data %>% 
+  mutate(data_sample = case_when(
+        datetime %within% intrain ~ "train",
+        datetime %within% intest ~ "test")) %>% 
+  drop_na() %>% 
+  mutate(data_sample = factor(data_sample, levels = c("train", "test")))
+  
+head(scotty_data)
+>>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 
 ```
 
@@ -661,7 +673,6 @@ Dapat dilihat pada visualisasi di atas, dimana jumlah demand di 3 Sub-Area berbe
 # Spread data menjadi 3 Sub-Area 
 scotty_data <- scotty_data %>%
   spread(src_sub_area, demand)
-
 head(scotty_data)
 
 ```
@@ -678,6 +689,13 @@ scalling <- recipe(~ ., filter(scotty_data, datetime %within% intrain)) %>%
 # preview the bake results
 scotty_data <- bake(scalling, scotty_data)
 
+<<<<<<< HEAD
+=======
+**3. Convert datato long format**
+```{r}
+scotty_data <- scotty_data %>% 
+  gather(src_sub_area, demand, -datetime, -data_sample)
+>>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 head(scotty_data)
 ```
 
@@ -713,6 +731,7 @@ variabel **src_sub_area** merupakan data nama dari Sub-Area.
 variabel **demand** merupakan data demand.
 
 ```{r}
+<<<<<<< HEAD
 scotty_data <- scotty_data %>% 
   gather(src_sub_area, demand, -datetime, -sample)
 
@@ -725,16 +744,30 @@ head(scotty_data)
 Pada pemodelan ini kita akan menggunakan fungsi `purr` dan untuk menggunakan fungsi `purr`, maka kita perlu merubah dataset kita yang sebelumnya berbentuk *table* menjadi *nested table*, berikut lebih jelasnya:
 
 ```{r}
+=======
+>>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 scotty_data <- scotty_data %>%
-  group_by(src_sub_area, sample) %>%
+  group_by(src_sub_area, data_sample) %>%
   nest(.key = "data") %>%
-  spread(sample, data)
+  spread(data_sample, data)
 
 scotty_data
+
 ```
 
 Data diatas merupakan format nested table, variabel **src_sub_area** merupakan nama sub-area, variabel **train** merupakan bentuk nested table yang isinya merupakan data **datetime dan demand untuk data train**, dan variabel **test** juga merupakan bentuk nested table yang isinya merupakan data **datetime dan demand untuk data test**.
 
+<<<<<<< HEAD
+=======
+# PREPARING THE DATA MODEL LIST
+
+```{r}
+# Membuat list model data
+data_funs <- list(
+  ts = function(x) ts(x$demand, frequency = 24),
+  msts = function(x) msts(x$demand, seasonal.periods = c(24, 24*7))
+)
+>>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 
 ## Data Time-Series Object List
 
@@ -796,6 +829,7 @@ Berdasarkan proses decompose, kita ketahui bahwa objek time-series ini memiliki 
 #models list
 models <- list(
   ets = function(x) ets(x),
+<<<<<<< HEAD
   #Model Holt’s Winter Exponential Smoothing
   holt_winters = function(x) HoltWinters(x),
   # Seasonal ARIMA (SARIMA)
@@ -811,6 +845,13 @@ models <- list(
   stlm_arima = function(x) stlm(x, method="arima"),
   
   #TBATS
+=======
+  holt.winter = function(x) HoltWinters(x,seasonal = "additive"),
+  auto.arima = function(x) auto.arima(x, seasonal = TRUE),
+  stlm = function(x) stlm(x),
+  stlm_ets = function(x) stlm(x, method="ets"),
+  stlm_arima = function(x) stlm(x, method="arima"),
+>>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
   tbats = function(x) tbats(x, use.box.cox = FALSE, 
                   use.trend = TRUE, 
                   use.damped.trend = TRUE)
@@ -907,6 +948,7 @@ scotty_forecast <- scotty_model_eval %>%
     key = paste(data_fun_name, model_name, sep = "-")
   )
 
+<<<<<<< HEAD
 # Extract Value using unnest
 scotty_forecast <- scotty_forecast %>% 
   select(src_sub_area, key, actual = test, forecast) %>%
@@ -926,6 +968,9 @@ scotty_forecast <- scotty_forecast %>%
 scotty_forecast %>%
  select(-popup) %>% 
  spread(key,demand) 
+=======
+head(scotty_data)
+>>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 ```
 
 <br>
@@ -934,6 +979,7 @@ scotty_forecast %>%
 
 ```{r, fig.width=8}
 
+<<<<<<< HEAD
 plot_scotty_forecast <- scotty_forecast %>% 
   ggplot(aes(x = datetime, y = demand)) +
     #geom_line(data = scotty_input,aes(y = demand),alpha = 0.2,size = 0.8)+
@@ -991,6 +1037,10 @@ Sebelumnya kita menggunakan data train dan melakukan splitting menjadi tranning 
 ```{r}
 # Menggabungkan data test dan train
 scotty_final_model <- scotty_best_model %>%
+=======
+```{r, eval=FALSE}
+scotty_ts_model <- scotty_data %>%
+>>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
   mutate(
     fulldata = map2(train, test, ~ bind_rows(.x, .y))) %>%
   select(src_sub_area, fulldata, everything(), -train, -test)
@@ -1010,9 +1060,17 @@ scotty_final_model <- scotty_final_model %>%
   ) %>%
   select(-data, -params)
 
+<<<<<<< HEAD
 final_models <- scotty_final_model
 wd <-  as.character(getwd())
 saveRDS(object=final_models, file=paste(paste(wd,"/scotty_ts_model/",sep = ""),"scotty_final_model.rds",sep=""))
+=======
+models <- scotty_ts_model
+#scotty_ts_model <- saveRDS(models, "scotty_ts_model.RDS")
+wd <-  as.character(getwd())
+saveRDS(object=models, file=paste(paste(wd,"/scotty_ts_model/",sep = ""),"scotty_ts_model.rds",sep=""))
+
+>>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
 ```
 
 ***
@@ -1024,6 +1082,7 @@ saveRDS(object=final_models, file=paste(paste(wd,"/scotty_ts_model/",sep = ""),"
 Berdasarkan problem yang ingin diselesaikan maka kita perlu akan melakukan prediksi **demand per-jam** di sub area **sxk97, sxk9e dan sxk9** dalam rentang waktu **1 minggu kedepan** atau dari **2017-12-03 00:00 sampai 2017-12-09 23:00**. Berikut ini hasil forecastingnya:
 
 ```{r}
+<<<<<<< HEAD
 # Read Model
 scotty_final_model <- readRDS("scotty_ts_model/scotty_final_model.rds")
 
@@ -1140,3 +1199,26 @@ shapiro.test(x = residuals(scotty_final_model$fitted[[2]]))
 shapiro.test(x = residuals(scotty_final_model$fitted[[3]]))
 
 ```
+=======
+scotty_ts_model <- readRDS("scotty_ts_model/scotty_ts_model.rds")
+head(scotty_ts_model)
+```
+
+
+# Evaluation
+
+```{r}
+scotty_model_eval <- scotty_ts_model %>% 
+  mutate(
+    MAE_error_test = map(fitted, ~ forecast(.x, h = test_size)) %>%
+                     map2_dbl(test, ~ mae_vec(truth = reverse(.y$demand,rec,src_sub_area), 
+                                              estimate = reverse(.x$mean,rec,src_sub_area))),
+    MAE_error_train = map(fitted, ~ forecast(.x, h = test_size)) %>%
+                      map2_dbl(train, ~ mae_vec(truth = reverse(.y$demand,rec,src_sub_area), 
+                                                estimate = reverse(.x$fitted,rec,src_sub_area)))
+    ) %>% 
+  arrange(src_sub_area, MAE_error_test,MAE_error_train) 
+
+```
+
+>>>>>>> 7533a745ed2751bcacbc93ddd323cb7ed62607b8
