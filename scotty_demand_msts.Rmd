@@ -1,5 +1,5 @@
 ---
-title: "Hourly Demand Forecasting of Scotty Ride-sharing Service"
+title: "Hourly Demand Forecasting of Scotty Ride-Sharing Service"
 author: "by Gabriel Erichson"
 date: "3/28/2020"
 output:
@@ -90,7 +90,6 @@ mycolorfill = c(
 )
 ##ff7c43
 my_viridis = c(
-"#453781FF",
 "#404788FF",
 "#39568CFF",
 "#33638DFF",
@@ -100,8 +99,7 @@ my_viridis = c(
 "#1F968BFF",
 "#20A387FF",
 "#29AF7FFF",
-"#3CBB75FF",
-"#55C667FF"
+"#3CBB75FF"
 )
 
 
@@ -192,15 +190,15 @@ confirmed_time_sec    | Time different from request to confirmed (in seconds)
 
 <br>
 
-## Missing & Duplicate Value?
-**Missing Value**
+## Missing & Duplicate Value
+**Missing Value**<br>
 Jika dilihat terdapat missing value pada variabel **trip_id** dan **driver_id**, namun tidak menjadi masalah karena pada case ini kita butuh data waktu, sub area dan demand.
 ```{r}
 colSums(is.na(scotty_input))
 ```
 <br>
 
-**Duplicate Value**
+**Duplicate Value**<br>
 Dataset ini tidak memiliki data transaksi yang duplikat, sehingga bisa kita lanjutkan ke tahap pre-processing.
 ```{r}
 data.frame(jumlah.observasi.awal=length(scotty_input$id),
@@ -217,7 +215,7 @@ data.frame(jumlah.observasi.awal=length(scotty_input$id),
 glimpse(scotty_input)
 ```
 
-Dataset yang dimiliki terdiri dari **90.133** observasi dan **16** variabel. Jika dilihat dari struktur datanya, beberapa variabel memiliki tipe data yang belum sesuai. Namun, karena projek ini bertujuan untuk melakukan time-series forecasting terhadap demand per-jam pada layanan motorcycle ride-sharing di Scotty, maka data yang kita perlukan adalah waktu transaksi per-jam dan demand pada setiap src_sub_area. Maka dari Berikut prosesnya:
+Dataset yang dimiliki terdiri dari **90.133** observasi dan **16** variabel. Jika dilihat dari struktur datanya, beberapa variabel memiliki tipe data yang belum sesuai. Namun, karena projek ini bertujuan untuk melakukan time-series forecasting terhadap demand per-jam pada layanan motorcycle ride-sharing di Scotty, maka data yang kita perlukan adalah waktu transaksi per-jam **(start_time)** dan demand **(count(id))** pada setiap Sub-Ara **(src_sub_area)**. Maka dari Berikut proses dan datanya:
 
 ```{r}
 scotty_input <- scotty_input %>% 
@@ -228,18 +226,21 @@ scotty_input <- scotty_input %>%
    group_by(src_sub_area, datetime) %>% 
    summarise(demand = length(status)) %>% 
    ungroup()
+
+scotty_input
 ```
 
+<br>
 
-## Missing Sequential Datetime Value
+## Missing Sequential Datetime
 
 Dalam melakukan analisa dan prediksi time series ada beberapa hal yang harus terpenuhi antara lain:<br>
   1. Data tidak boleh ada yang missing<br>
   2. Data harus terurut berdasarkan periode waktunya<br>
   3. Tidak boleh ada waktu atau periode yang terlewat/bolong<br>
   
-Terkait case ini, Jam opearasional Scotty yaitu 24jam/hari, sehingga kita harus memastikan seluruh data jam sudah lengkap secara sekuensial dari rentang tanggal minimum hingga tanggal maximum. Jika terdapat deret waktu yang kosong, 
-maka dapat dilakukan imputasi data dengan asumsi bahwa pada waktu tersebut memang tidak terdapat transaksi, sehingga **jumlah demand = 0**.
+Terkait case ini, Jam opearasional Scotty yaitu 24jam/hari, sehingga kita harus memastikan seluruh data jam sudah lengkap secara sekuensial dari rentang tanggal minimum hingga tanggal maximum. Jika terdapat deret waktu yang kosong,
+maka dapat dilakukan imputasi data dengan asumsi bahwa pada waktu tersebut memang tidak terdapat transaksi, sehingga nilai **demand = 0**.
 
 ```{r, warning=FALSE, error=FALSE}
 scotty_input <- scotty_input %>% 
@@ -260,7 +261,7 @@ scotty_input <- scotty_input %>%
 scotty_input %>% filter(demand==0)
 ```
 
-Data diatas menunjukan total waktu yang tidak terdapat transaksi dari sub Area **sxk97, sxk9e dan sxk9s** yaitu 301 Jam.
+Data diatas menunjukan data waktu tanpa transaksi dari sub Area **sxk97, sxk9e dan sxk9s**. Total waktu tanpa transaksi yaitu 311 Jam dimana setiap baris merepresentasikan 1 jam.
 
 
 
@@ -269,7 +270,7 @@ Data diatas menunjukan total waktu yang tidak terdapat transaksi dari sub Area *
 summary(scotty_input)
 ```
 
-Informasi di atas merupakan summary keseluruhan data yang kita miliki. Dapat diketahui bahwa dataset ini merupakan data transaksi dari 3 sub area yaitu **sxk97, sxk9e dan sxk9s** yang terjadi dari **2017-10-01 00:00** sampai **2017-12-02 23:00** dengan **jumlah minimum 0 demand** dan **jumlah maximum 217 demand**. Demand 0 diasumsikan bahwa pada waktu tertentu memang tidak terdapat transaksi.
+Informasi di atas merupakan summary keseluruhan data yang kita butuhkan untuk melakukan melakukan forecasting. Dapat diketahui bahwa dataset ini merupakan data transaksi dari 3 sub area yaitu **sxk97, sxk9e dan sxk9s** yang terjadi dari **2017-10-01 00:00** sampai **2017-12-02 23:00** dengan **jumlah minimum 0 demand** dan **jumlah maximum 217 demand**. Demand 0 diasumsikan bahwa pada waktu tertentu memang tidak terdapat transaksi.
 
 
 ***
@@ -682,8 +683,25 @@ head(scotty_data)
 ```
 
 **2. Scalling data**
+
 ```{r}
-# recipes: square root, center, scale
+# mean(scotty_data$sxk97)
+# mean(scotty_data$sxk9e)
+# mean(scotty_data$sxk9s)
+# 
+# sd(scotty_data$sxk97)
+# sd(scotty_data$sxk9e)
+# sd(scotty_data$sxk9s)
+# 
+# var(scotty_data$sxk97)
+# var(scotty_data$sxk9e)
+# var(scotty_data$sxk9s)
+#
+# boxplot(scotty_data$sxk97)
+# boxplot(scotty_data$sxk9e)
+# boxplot(scotty_data$sxk9s)
+
+# recipes: square root transformation, center, scale
 scalling <- recipe(~ ., filter(scotty_data, datetime %within% intrain)) %>%
   step_sqrt(all_numeric()) %>%
   step_center(all_numeric()) %>%
@@ -692,6 +710,12 @@ scalling <- recipe(~ ., filter(scotty_data, datetime %within% intrain)) %>%
 
 # preview the bake results
 scotty_data <- bake(scalling, scotty_data)
+
+# log transform
+#scotty_data$sxk97 <- log(scotty_data$sxk97+1)
+#scotty_data$sxk9e <- log(scotty_data$sxk9e+1)
+#scotty_data$sxk9s <- log(scotty_data$sxk9s+1)
+
 
 head(scotty_data)
 ```
@@ -715,6 +739,23 @@ revert_back <- function(vector, recipe, varname) {
   results
 }
 
+
+# Exp dari Log +1
+# revert_back <- function(vector, recipe, varname) {
+#   # store recipe values
+#   #rec_center <- recipe$steps[[2]]$means[varname]
+#   #rec_scale <- recipe$steps[[3]]$sds[varname]
+#
+#   # convert back based on the recipe
+#   #results <- (vector * rec_scale + rec_center) ^ 2
+
+#   results <- exp(vector)-1
+#   # add additional adjustment if necessary
+#   results <- round(results)
+#
+#   # return the results
+#   results
+# }
 ```
 
 
@@ -753,7 +794,7 @@ Data diatas merupakan format nested table, variabel **src_sub_area** merupakan n
 
 ## Data Time-Series Object List
 
-Pada bagian Seasonal Analysis, kita sudah melihat bahwa data kita merupakan Mutiple Seasonal sehingga data kita akan lebih cocok apabila dikonversi keformat **msts** dengan seasonal harian dan mingguan, namun dengan menggunakan konsep nested table kita juga dapat mengecek dengan mudah apabila data kita dikonversi keformat **ts**. Sehingga, kita akan mencoba melakukan pemodelan menggunakan **single seasonal time-series dengan frequency harian** dan **multiple seasonal time-series dengan seasonal harian dan mingguan** pada masing-masing Sub-Area.
+Berdasarkan proses decompose sebelumnya, kita sudah melihat bahwa data kita memiliki **Mutiple Seasonal** sehingga data kita akan lebih cocok apabila dikonversi menjadi objek **msts** dengan seasonal harian dan mingguan, namun dengan menggunakan konsep nested table kita juga dapat mengecek dengan mudah apabila data kita dikonversi ke objek **ts**. Hal tersebut akan sangat membantu kita untuk membdandingkan hasilnya. Sehingga, kita akan mencoba melakukan pemodelan menggunakan **single seasonal time-series dengan frequency harian** dan **multiple seasonal time-series dengan seasonal harian dan mingguan** pada masing-masing Sub-Area.
 
 ```{r}
 # Membuat list objek data time-series
@@ -791,12 +832,11 @@ scotty_data <- scotty_data %>%
 scotty_data
 ```
 
-Data diatas merupakan nested table antara data train dan data tes pada masing-masing sub-area yang digabungkan dengan objek time series yang sudah dibuat. Sampai dengan proses ini, berarti kita sudah memiliki objek **single seasonal time-series dengan frequency harian** dan **multiple seasonal time-series dengan seasonal harian dan mingguan** pada masing-masing Sub-Area. Mari kita siapkan model-model untuk masing-masing objek.<br>
+Data diatas merupakan nested table antara data train dan data test pada masing-masing sub-area yang digabungkan dengan objek time series yang sudah dibuat. Sampai dengan proses ini, berarti kita sudah memiliki objek **single seasonal time-series dengan frequency harian** dan **multiple seasonal time-series dengan seasonal harian dan mingguan** pada masing-masing Sub-Area. Mari kita siapkan model-model untuk masing-masing objek.<br>
 
 
 ## Time Series Model List
-
-Untuk case ini kita akan mencoba menggunakan beberapa model, antara lain:<br>
+objek time-series yang kita buat memiliki efek seasonal, sehingga seharusnya hanya metode yang dapat mengatasi efek seasonal yang kita gunakan, namun mari kita coba beberapa model dan diterapkan pada setiap objek time-series yang sudah dibuat. Metode yang akan digunakan yaitu:<br>
 
   1. ETS <br>
   2. Holt Winter Exponential Smoothing <br>
@@ -805,7 +845,7 @@ Untuk case ini kita akan mencoba menggunakan beberapa model, antara lain:<br>
   5. STLM method="arima" <br>
   6. TBATS <br>
 
-Berdasarkan proses decompose, kita ketahui bahwa objek time-series ini memiliki trend dan seasonal. Sehingga seharusnya hanya metode yang bisa mengatasi efek trend dan seasonal yang kita gunakan, namun mari kita coba seluruh model diatas terhadap data **single seasonal** dan **multiple seasonal** yang sudah kita buat. Kemudian, untuk menggenerate seluruh modelnya, maka seluruh model akan kita join/merge dengan nested table dari objek time-series yang sudah kita buat sebelumnya. Berikut proses dan hasilnya:
+seluruh model diatas akan kita join/merge dengan nested table dari objek time-series yang sudah kita buat sebelumnya supaya dapat di generate dengan mudah. Berikut proses dan hasilnya:
 
 ```{r}
 #models list
@@ -875,7 +915,7 @@ saveRDS(object=models, file=paste(paste(wd,"/scotty_ts_model/",sep = ""),"scotty
 
 ```
 
-Mari kita breakdown dulu. Nested table yang sebelumnya kita buat terdiri dari 3 Sub-Area, dan setiap sub-area dibuat menjadi 2 objek time series yaitu **single seasonal** dan **multiple seasonal**, kemudian kita membuat 6 model yang akan digunakan berdasarkan sub-area dan jenis objek time-series nya. Sehingga, totalnya kita sudah membuat 36 model time-series. Berikut ini hasil generate seluruh model yang sudah dibuat dan siap untuk digunakan.
+Mari kita breakdown dulu. Nested table yang sebelumnya kita buat terdiri dari 3 Sub-Area, dan setiap sub-area dibuat menjadi 2 objek time series yaitu **single seasonal** dan **multiple seasonal**, kemudian kita membuat 6 model yang akan digunakan berdasarkan sub-area dan jenis objek time-series nya. Sehingga, totalnya kita sudah membuat **36 model time-series dimana 18 model untuk single seasonal object dan 18 model untuk multiple seasonal object**. Berikut ini hasil generate seluruh model yang sudah dibuat dan siap untuk digunakan.
 
 ```{r}
 scotty_ts_model <- readRDS("scotty_ts_model/scotty_ts_model.rds")
@@ -883,6 +923,7 @@ head(scotty_ts_model)
 
 ```
 
+<br>
 
 ## Model Evaluation
 
@@ -906,6 +947,8 @@ scotty_model_eval <- scotty_ts_model %>%
 scotty_model_eval %>% select(src_sub_area,data_fun_name, model_name,fitted,mae_train,mae_test)
 
 ```
+
+<br>
 
 ## Forecasting on Data Test
 
@@ -986,9 +1029,13 @@ ggplotly(plot_scotty_forecast, tooltip = "text", height = 560) %>%
 
 <br>
 
+Pada chart diatas, garis abu-abu menunjukan data test yang hendak di-forecast, garis berwarna lainnya merupakan representasi hasil forecast dari model yang sudah kita buat dan titik/poin merepresentasikan hasil forecast dengan demand = 0 (waktu tanpa transaksi). Jika dilihat secara Visual, model **TBATS (msts-tbats)** menggunakan objek **Multiple Seasonal Time Series** terlihat cenderung paling bisa mengikuti pola garis dari data test pada setiap sub-area. Namun mari kita cek model terbaik dari setiap sub-area.
+
+<br>
+
 ## Automated Best Model Selection
 
-Berikut ini adalah model terbaik yang dapat diterapkan pada ketiga sub-area. Error paling kecil pada ketiga sub-area dihasilkan oleh model **TBATS** dengan objek **Multiple Seasonal Time Series** dengan nilai **MAE < 10**.
+Berikut ini adalah model terbaik yang dapat diterapkan pada ketiga sub-area:
  
 ```{r}
 # Minimum error for each sub-area
@@ -998,10 +1045,11 @@ scotty_best_model <- scotty_model_eval %>%
   filter(mae_test == min(mae_test)) %>%
   ungroup()
 
-scotty_best_model
+
+scotty_best_model %>% select(src_sub_area,data_fun_name, model_name,mae_train,mae_test)
 ```
 
-Sebelumnya kita menggunakan data train dan melakukan splitting menjadi tranning set dan test set untuk menentukan model. Untuk memprediksi data aktual maka kita harus menggabungkannya kembali seluruh datanya supaya deret waktu lengkap.
+Informasi diatas menunjukan bahwa error paling kecil pada ketiga sub-area dihasilkan oleh model **TBATS** menggunakan objek **Multiple Seasonal Time Series** dengan nilai **MAE < 10**, sehingga model inilah yang paling tepat untuk kita terapkan. Namun, perlu dingat sebelumnya kita membuat model ini menggunakan data train dan melakukan splitting menjadi tranning set dan test set untuk menentukan model terbaik. Untuk melakukan forecast terhadap data aktual maka kita harus menggabungkannya kembali seluruh datanya supaya deret waktu lengkap dan baru bisa menerapkan ketiga model terbaik diatas. Maka, berikut prosesnya:
 
 ```{r}
 # Menggabungkan data test dan train
@@ -1061,12 +1109,13 @@ next_week_prediction_result <- next_week_prediction %>%
   unnest(value) %>% 
   mutate(demand = revert_back(demand,scalling,src_sub_area)) 
 
+
 result_submit <- next_week_prediction_result %>%
     filter(key == "forecast") %>%
     select(-key)
- 
+
  wd <-  as.character(getwd())
- write_csv(result_submit,paste(paste(wd,"/data_result/",sep = ""),"gehm_submit-28032020-001.csv",sep=""))
+ write_csv(result_submit,paste(paste(wd,"/data_result/",sep = ""),"gehm_submit-28032020-001_exp_log.csv",sep=""))
 
 # Display Forecasting Result  
 next_week_prediction_result %>%
@@ -1128,78 +1177,74 @@ ggplotly(
 
 ```
 
+<br>
+Berdasarkan hasil forecasting untuk 3 Desember 2017 pukul 00:00 sampai 9 Desember 2017 pukul 23:00, demand paling tinggi pada ketiga sub-area terjadi pada 8 Desember 2017 pukul 18:00, dimana demand di sxk87 sebanyak 85, demand di sxk9e sebanyak 106 dan demand di sxk9s sebanyak 91.
 
+
+***
+
+<br>
 
 # Conclusion 
 
 ## Assumption Checking {.tabset}
-**Assumption Checking: Auto Correlation and Normality residual**
+**Assumption Checking : Auto Correlation and Normality of Residual**<br>
+
+Jika dilihat pada plot ACF residual ketiga sub-area, masih terdapat lag yang keluar dari garis biru. Hal ini dapat disimpulkan masih ada residual yang berkorelasi sehingga menunjukan bahwa masih terdapat informasi yang tertinggal yang seharusnya digunakan untuk menghitung hasil forecast. Kemudian, jika dilihat pada histogram residual pada ketiga sub-area, menunjukan bahwa residual kurang berdisitribusi normal. Memang residual cukup berpusat ditengah, namun masih terdapat data residual pada bagian kiri dan kanan yang cukup banyak.
 
 ### Sub-Area sxk97
-**Residual from TBATS in Sub-Area sxk97**
+**Residual from TBATS method applied for Sub-Area sxk97**<br>
 ```{r}
-checkresiduals(scotty_final_model$fitted[[1]],plot=TRUE, main="Residual from TBATS in Sub-Area sxk97") 
+# checkresiduals(scotty_final_model$fitted[[1]],plot=TRUE, main="Residual from TBATS in Sub-Area sxk97") 
+# shapiro.test(x = residuals(scotty_final_model$fitted[[1]]))#sxk97
+
+#par(mfrow=c(1,2), cex=1.1)
+ggplotly(ggAcf(residuals(next_week_prediction$fitted[[2]]), lag.max = 504)+
+  ggtitle("sxk97 : ACF of residuals"))
+
+ggplotly(gghistogram(residuals(next_week_prediction$fitted[[2]]))+
+           labs(title="sxk97 : Histogram of residuals",x="residuals"))
 ```
 
+
+
 ### Sub-Area sxk9e
-**Residual from TBATS in Sub-Area sxk9e**
+**Residual from TBATS method applied for Sub-Area sxk9e**<br>
+
 ```{r}
-checkresiduals(scotty_final_model$fitted[[2]],plot=TRUE, main="Residual from TBATS in Sub-Area sxk9e") 
+# checkresiduals(scotty_final_model$fitted[[2]],plot=TRUE, main="Residual from TBATS in Sub-Area sxk9e") 
+# shapiro.test(x = residuals(scotty_final_model$fitted[[2]]))#sxk97
+#par(mfrow=c(1,2), cex=1.1)
+ggplotly(ggAcf(residuals(next_week_prediction$fitted[[2]]), lag.max = 504)+
+  ggtitle("sxk9e : ACF of residuals"))
+
+ggplotly(gghistogram(residuals(next_week_prediction$fitted[[2]]))+
+           labs(title="sxk9e : Histogram of residuals",x="residuals") 
+         )
 ```
 
 ### Sub-Area sxk9s
-**Residual from TBATS in Sub-Area sxk9s**
+**Residual from TBATS method applied for Sub-Area sxk9s**<br>
 ```{r}
-checkresiduals(scotty_final_model$fitted[[3]],plot=TRUE,df=NULL, main="Residual from TBATS in Sub-Area sxk9s") 
-```
+#checkresiduals(scotty_final_model$fitted[[3]],plot=TRUE,df=NULL, main="Residual from TBATS in Sub-Area sxk9s") 
+#shapiro.test(x = residuals(scotty_final_model$fitted[[3]]))#sxk97
+par(mfrow=c(1,2), cex=1.1)
+ggplotly(ggAcf(residuals(next_week_prediction$fitted[[3]]), lag.max = 504)+
+  ggtitle("sxk9s : ACF of residuals"))
 
-
-```{r,fig.width=12, fig.asp=0.4, eval=FALSE, include=FALSE}
-par(mfrow=c(1,3), cex=1.1)
-acf(residuals(scotty_final_model$fitted[[1]]),main="Auto Correlation from TBATS in Sub-Area sxk97")
-acf(residuals(scotty_final_model$fitted[[2]]),main="Sub-Area sxk9e")
-acf(residuals(scotty_final_model$fitted[[3]]),main="Sub-Area sxk9s")
-
-# Box.test(x = residuals(scotty_final_model$fitted[[1]]), type = "Ljung-Box")
-# Box.test(x = residuals(scotty_final_model$fitted[[2]]), type = "Ljung-Box")
-# Box.test(x = residuals(scotty_final_model$fitted[[3]]), type = "Ljung-Box")
-
+ggplotly(gghistogram(residuals(next_week_prediction$fitted[[3]]))+
+      labs(title="sxk9s : Histogram of residuals",x="residuals")
+      )
 ```
 
 
 
-
-```{r, eval=FALSE,include=FALSE}
-#**Normality residual**
-
-# resid(residuals(scotty_final_model$fitted[[1]]))
-shapiro.test(x = residuals(scotty_final_model$fitted[[1]]))
-shapiro.test(x = residuals(scotty_final_model$fitted[[2]]))
-shapiro.test(x = residuals(scotty_final_model$fitted[[3]]))
-# 
-# library(DMwR)
-# 
-# accmeasures1=regr.eval(test_series, forecast1$pred)
-# 
-# scotty_final_model$fitted[[1]]$fitted.values
-# 
-# 
-# 
-# assmp <- scotty_model_eval %>%
-#   group_by(src_sub_area) %>%
-#   filter(mae_test == min(mae_test)) %>%
-#   ungroup()
-# 
-# regr.eval(test_series, forecast1$pred)
-
-```
 
 <br>
 
 ## Summary
 
-
-
+Hasil analisa data time-series yang sudah dilakukan menunjukan layanan Ride-sharing service Scotty di sub-area sxk97, sxk9e dan sxk9s memiliki seasonal harian dan mingguan. Selain itu, dari model forecasting menggunakan metode ETS, HoltWinter, SARIMA, STLM dan TBATS yang sudah di-uji, model **TBATS** menggunakan objek **Multiple Seasonal Time Series** menghasilkan nilai error paling kecil dengan nilai **MAE < 10**. Hasil forecasting model **TBATS** untuk 3 Desember 2017 pukul 00:00 sampai 9 Desember 2017 pukul 23:00 menunjukan demand paling tinggi pada ketiga sub-area terjadi pada 8 Desember 2017 pukul 18:00, dimana demand di sxk87 sebanyak 85, demand di sxk9e sebanyak 106 dan demand di sxk9s sebanyak 91.
 
 
 ***

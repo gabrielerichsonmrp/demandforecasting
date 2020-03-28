@@ -35,7 +35,7 @@ p {
 .list-group-item.active, .list-group-item.active:hover, .list-group-item.active:focus {
     z-index: 2;
     color: #ffffff;
-    background-color: #39568CFF;
+    background-color: #20A387FF;
     border-color: #2f4b7c;
     font-size: 14px;
 }
@@ -70,7 +70,7 @@ p {
 
 .nav-pills>li.active>a, .nav-pills>li.active>a:hover, .nav-pills>li.active>a:focus {
   color: #ffffff;
-  background-color: #39568CFF;
+  background-color: #20A387FF;
   font-size: 14px;
 }
 
@@ -114,12 +114,12 @@ h3 {
 
 h1.title {
     font-size: 1.9em;
-    color: #39568CFF;
+    color: #20A387FF;
 }
 
 
 em {
-    color: #287D8EFF;
+    color: #0fab81;
     margin-left: .5%;
     margin-right: .5%;
     font-weight: bold;
@@ -229,7 +229,23 @@ blockquote:after {
 }
 
 code span.kw {
-    color: #287D8EFF;
+    color: #ffca00;
+}
+
+code span.cf {
+    color: #28bf1f;
+}
+
+code span.co {
+    color: #858586;
+}
+
+code span.st {
+    color: #33cdde;
+}
+
+code span.ot {
+    color: #ff2e2e;
 }
 
 
