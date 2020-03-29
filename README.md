@@ -14,3 +14,5 @@ Menurut informasi yang dilansir dari www.markets.businessinsider.com, Scotty ber
 Key: Time-series, forecasting, Decompose, Seasonal Analysis, ETS, HOLTWINTER, ARIMA, STLM, TBATS, RStudio<br>
 Author: Gabriel Erichson Marpaung
 Linkedin: www.linkedin.com/in/gabrielerichson
+
+

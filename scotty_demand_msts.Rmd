@@ -567,10 +567,10 @@ ggplotly(plot_sxk9s_msts_weekly) %>%
 
 ```
 
-Pada hasil decompose objek multiple seasonal time-series diatas, dapat dilihat pola tren terlihat lebih smooth dan tidak membentuk pola. Hal ini mengindikasikan bahwa kemungkinan besar seluruhan seasonal sudah ditangkap. Untuk lebih jelasnya, berikut ini visualisasi seasonal perjam-nya dalam harian dan mingguan pada data observasi kita:
+Pada hasil decompose objek multiple seasonal time-series diatas, dapat dilihat pola tren terlihat lebih smooth dan tidak membentuk pola. Hal ini mengindikasikan bahwa kemungkinan besar keseluruhan seasonal sudah ditangkap. Untuk lebih jelasnya, berikut ini visualisasi seasonal perjam-nya dalam harian dan mingguan pada data observasi kita:
 
 
-```{r, fig.width=8}
+```{r, fig.width=9}
 sxk9s_msts_weekly_dc <- mstl(sxk9s_msts_weekly %>% tail(24*7*4))
 
 plot_seasonal_msts <- as.data.frame(sxk9s_msts_weekly_dc) %>% 
@@ -606,6 +606,13 @@ ggplotly(plot_seasonal_msts)
 ```
 
 
+`Pada chart diatas dapat dilihat bahwa high season terjadi pada pada setiap hari Jumat pukul 17:00 sampai 19:00.` 
+
+
+***
+
+<br>
+
 # Cross Validation
 Dalam case ini kita akan mencoba membuat beberapa model, tentunya kita akan membagi seluruh data yang kita punya menjadi data train dan data test. Problem yang diselesaikan yaitu memprediksi demand perjam dalam 1 minggu sehingga saya akan membagi data test menggunakan data 1 minggu terakhir dan sisanya sebagai data train. Berikut interval waktu di data train dan data test:
 
@@ -628,13 +635,6 @@ intest <- interval(test_start, test_end)
 data.frame("interval_data_train"=intrain,
               "interval_data_test"=intest)
 
-scotty_data <- scotty_data %>% 
-  mutate(sample = case_when(
-        datetime %within% intrain ~ "train",
-        datetime %within% intest ~ "test")) %>% 
-  drop_na() %>% 
-  mutate(sample = factor(sample, levels = c("train", "test")))
-  
 #head(scotty_data)
 
 ```
@@ -642,7 +642,13 @@ scotty_data <- scotty_data %>%
 **Berikut ini visualisasi pembagian data train dan data test dalam deret waktu:**
 
 ```{r, fig.width=8}
-viz_scotty_data <- scotty_data
+viz_scotty_data <- scotty_data %>% 
+  mutate(sample = case_when(
+        datetime %within% intrain ~ "train",
+        datetime %within% intest ~ "test")) %>% 
+  drop_na() %>% 
+  mutate(sample = factor(sample, levels = c("train", "test")))
+
 ggplotly(
  viz_scotty_data %>% 
   ggplot(aes(x = datetime, y = demand, colour = sample)) +
@@ -682,8 +688,8 @@ head(scotty_data)
 
 ```
 
-**2. Scalling data**
-
+**2. Scalling data**<br>
+Sebelumya saya sudah mencoba scalling menggunakan transformasi Log. Memang outlier-nya lebih minimum, namun hasil evaluasi errornya lebih besar dibandingkan jika scalling menggunakan transformasi square root. Sehingga, saya memutuskan scalling menggunakan transformasi square root. Berikut sampel hasil scalling:
 ```{r}
 # mean(scotty_data$sxk97)
 # mean(scotty_data$sxk9e)
@@ -701,7 +707,7 @@ head(scotty_data)
 # boxplot(scotty_data$sxk9e)
 # boxplot(scotty_data$sxk9s)
 
-# recipes: square root transformation, center, scale
+# recipes: square root transformation- sqrt, center, scale
 scalling <- recipe(~ ., filter(scotty_data, datetime %within% intrain)) %>%
   step_sqrt(all_numeric()) %>%
   step_center(all_numeric()) %>%
@@ -741,7 +747,7 @@ revert_back <- function(vector, recipe, varname) {
 
 
 # Exp dari Log +1
-# revert_back <- function(vector, recipe, varname) {
+# revert_back_log <- function(vector) {
 #   # store recipe values
 #   #rec_center <- recipe$steps[[2]]$means[varname]
 #   #rec_scale <- recipe$steps[[3]]$sds[varname]
@@ -770,7 +776,7 @@ variabel **demand** merupakan data demand.
 
 ```{r}
 scotty_data <- scotty_data %>% 
-  gather(src_sub_area, demand, -datetime, -sample)
+  gather(src_sub_area, demand, -datetime)
 
 head(scotty_data)
 ```
@@ -778,9 +784,18 @@ head(scotty_data)
 
 # Nested Modelling
 
-Pada pemodelan ini kita akan menggunakan fungsi `purr` dan untuk menggunakan fungsi `purr`, maka kita perlu merubah dataset kita yang sebelumnya berbentuk *table* menjadi *nested table*, berikut lebih jelasnya:
+Pada pemodelan ini kita akan menggunakan fungsi *purr* dan untuk menggunakan fungsi *purr*, maka kita perlu merubah dataset kita yang sebelumnya berbentuk *table* menjadi *nested table*, berikut lebih jelasnya:
 
 ```{r}
+# Split Train-Test Sets
+scotty_data <- scotty_data %>% 
+  mutate(sample = case_when(
+        datetime %within% intrain ~ "train",
+        datetime %within% intest ~ "test")) %>% 
+  drop_na() %>% 
+  mutate(sample = factor(sample, levels = c("train", "test")))
+
+# nested table
 scotty_data <- scotty_data %>%
   group_by(src_sub_area, sample) %>%
   nest(.key = "data") %>%
@@ -798,12 +813,16 @@ Berdasarkan proses decompose sebelumnya, kita sudah melihat bahwa data kita memi
 
 ```{r}
 # Membuat list objek data time-series
+# replace_na(lag(x = as.vector(x$demand), n = 7),0)
 data_model <- list(
   # single seasonal time-series dengan frequency harian
-  ts = function(x) ts(x$demand, frequency = 24), 
+  ts = function(x) ts(x$demand, frequency = 24),
+  #ts = function(x) ts(replace_na(lag(x = as.vector(x$demand), n = 7),0), frequency = 24),
   
   # multiple seasonal time-series dengan seasonal harian dan mingguan
   msts = function(x) msts(x$demand, seasonal.periods = c(24, 24*7))
+  #msts = function(x) msts(replace_na(lag(x = as.vector(x$demand), n = 7),0), seasonal.periods = c(24, 24*7))
+ 
 )
 
 # convert to nested table
@@ -868,7 +887,10 @@ models <- list(
   #TBATS
   tbats = function(x) tbats(x, use.box.cox = FALSE, 
                   use.trend = TRUE, 
-                  use.damped.trend = TRUE)
+                  use.damped.trend = NULL,
+                  use.arma.errors = TRUE,
+                  use.parallel = TRUE,
+                  num.cores = 6)
 )
 
 #Nested Model by sub-area
@@ -881,14 +903,16 @@ models <- models %>%
 
 
 #join time-series object and model
-scotty_models <- scotty_data %>%
-  left_join(models) 
-  # filter(
-  #   !(model_name == "ets" & data_fun_name == "msts"),
-  #   !(model_name == "auto_arima" & data_fun_name == "msts"),
-  #   !(model_name == "stlm_ets" & data_fun_name == "msts"),
-  #   !(model_name == "stlm_arima" & data_fun_name == "msts")
-  # )
+ scotty_models <- scotty_data %>%
+   left_join(models)
+#    filter(
+#      !(model_name == "ets" & data_fun_name == "msts"),
+#      !(model_name == "auto_arima" & data_fun_name == "msts"),
+#      !(model_name == "tbats" & data_fun_name == "ts"),
+#      !(model_name == "tbats_nat" & data_fun_name == "ts")
+#      )
+#   #   !(model_name == "stlm_arima" & data_fun_name == "msts")
+#   # )
 
 scotty_models
 
@@ -908,6 +932,28 @@ scotty_ts_model <- scotty_models %>%
     fitted = invoke_map(model, params)
   ) %>%
   select(-data, -params)
+
+# 
+# tes <- msts(scotty_models$train[[1]]$demand, seasonal.periods = c(24,24*7))
+# length(tes)
+# 
+# msts(replace_na(lag(x = as.vector(scotty_models$train[[1]]$demand), n = 7),0),seasonal.periods = c(24,24*7))
+# 
+# data.frame(
+#   x = c(tes),
+#   lag1 = lag(x = as.vector(tes), n = 1),
+#   lag2 = lag(x = as.vector(tes), n = 2),
+#   lag3 = lag(x = as.vector(tes), n = 3),
+#   lag4 = lag(x = as.vector(tes), n = 4),
+#   lag5 = lag(x = as.vector(tes), n = 5),
+#   lag6 = lag(x = as.vector(tes), n = 6),
+#   lag7 = lag(x = as.vector(tes), n = 7),
+#   lag8 = lag(x = as.vector(tes), n = 8),
+#   lag9 = lag(x = as.vector(tes), n = 9)
+# ) %>%  na.omit() %>%
+#   GGally::ggcorr(label = T)
+# 
+# replace_na(lag(x = as.vector(scotty_models$train[[1]]$demand), n = 7),0)
 
 models <- scotty_ts_model
 wd <-  as.character(getwd())
@@ -952,7 +998,7 @@ scotty_model_eval %>% select(src_sub_area,data_fun_name, model_name,fitted,mae_t
 
 ## Forecasting on Data Test
 
-Berikut ini adalah hasil forecasting dari seluruh model terhadap data test.
+Berikut ini adalah proses dan hasil forecasting dari seluruh model terhadap data test:
 ```{r}
 scotty_forecast <- scotty_model_eval %>%
   mutate(
@@ -1110,19 +1156,26 @@ next_week_prediction_result <- next_week_prediction %>%
   mutate(demand = revert_back(demand,scalling,src_sub_area)) 
 
 
-result_submit <- next_week_prediction_result %>%
-    filter(key == "forecast") %>%
-    select(-key)
+```
 
- wd <-  as.character(getwd())
- write_csv(result_submit,paste(paste(wd,"/data_result/",sep = ""),"gehm_submit-28032020-001_exp_log.csv",sep=""))
 
+```{r}
 # Display Forecasting Result  
 next_week_prediction_result %>%
  filter(key=="forecast") %>% 
  spread(src_sub_area,demand) 
 
+# Submit result
+# result_submit <- next_week_prediction_result %>%
+#     filter(key == "forecast") %>%
+#     select(-key)
+# 
+# wd <-  as.character(getwd())
+# filename <- paste0("gehm_scotty_",as.integer(Sys.time()),".csv")
+# write_csv(result_submit,paste(paste(wd,"/data_result/",sep = ""),filename,sep=""))
+
 ```
+
 
 <br>
 
@@ -1181,6 +1234,7 @@ ggplotly(
 Berdasarkan hasil forecasting untuk 3 Desember 2017 pukul 00:00 sampai 9 Desember 2017 pukul 23:00, demand paling tinggi pada ketiga sub-area terjadi pada 8 Desember 2017 pukul 18:00, dimana demand di sxk87 sebanyak 85, demand di sxk9e sebanyak 106 dan demand di sxk9s sebanyak 91.
 
 
+
 ***
 
 <br>
@@ -1190,7 +1244,7 @@ Berdasarkan hasil forecasting untuk 3 Desember 2017 pukul 00:00 sampai 9 Desembe
 ## Assumption Checking {.tabset}
 **Assumption Checking : Auto Correlation and Normality of Residual**<br>
 
-Jika dilihat pada plot ACF residual ketiga sub-area, masih terdapat lag yang keluar dari garis biru. Hal ini dapat disimpulkan masih ada residual yang berkorelasi sehingga menunjukan bahwa masih terdapat informasi yang tertinggal yang seharusnya digunakan untuk menghitung hasil forecast. Kemudian, jika dilihat pada histogram residual pada ketiga sub-area, menunjukan bahwa residual kurang berdisitribusi normal. Memang residual cukup berpusat ditengah, namun masih terdapat data residual pada bagian kiri dan kanan yang cukup banyak.
+Jika dilihat pada plot ACF residual ketiga sub-area, masih terdapat lag yang keluar dari garis biru. Hal ini dapat disimpulkan masih ada residual yang berkorelasi sehingga menunjukan bahwa masih terdapat informasi yang tertinggal yang seharusnya digunakan untuk menghitung hasil forecast. Kemudian, jika dilihat pada histogram residual pada ketiga sub-area, menunjukan bahwa residual kurang berdisitribusi normal. Memang residual cukup berpusat ditengah, namun masih terdapat data residual pada bagian kiri dan kanan yang cukup banyak. Terkait hal ini kita bisa melakukan improvement misalkan memilih train-test set dengan periode waktu berbeda, differencing, imputasi null value menggunakan nilai rata-rata, melakukan teknik scalling berbeda atau mengeksplorasi teknik-teknik pemodelan time-series forecasting lainnya.
 
 ### Sub-Area sxk97
 **Residual from TBATS method applied for Sub-Area sxk97**<br>
@@ -1204,6 +1258,9 @@ ggplotly(ggAcf(residuals(next_week_prediction$fitted[[2]]), lag.max = 504)+
 
 ggplotly(gghistogram(residuals(next_week_prediction$fitted[[2]]))+
            labs(title="sxk97 : Histogram of residuals",x="residuals"))
+
+
+#vis_forecast[c(10,24,168,336,504),]
 ```
 
 
@@ -1244,7 +1301,8 @@ ggplotly(gghistogram(residuals(next_week_prediction$fitted[[3]]))+
 
 ## Summary
 
-Hasil analisa data time-series yang sudah dilakukan menunjukan layanan Ride-sharing service Scotty di sub-area sxk97, sxk9e dan sxk9s memiliki seasonal harian dan mingguan. Selain itu, dari model forecasting menggunakan metode ETS, HoltWinter, SARIMA, STLM dan TBATS yang sudah di-uji, model **TBATS** menggunakan objek **Multiple Seasonal Time Series** menghasilkan nilai error paling kecil dengan nilai **MAE < 10**. Hasil forecasting model **TBATS** untuk 3 Desember 2017 pukul 00:00 sampai 9 Desember 2017 pukul 23:00 menunjukan demand paling tinggi pada ketiga sub-area terjadi pada 8 Desember 2017 pukul 18:00, dimana demand di sxk87 sebanyak 85, demand di sxk9e sebanyak 106 dan demand di sxk9s sebanyak 91.
+Hasil analisa data time-series yang sudah dilakukan menunjukan layanan Ride-sharing service Scotty di sub-area sxk97, sxk9e dan sxk9s memiliki seasonal harian dan mingguan yang dimana **high season** terjadi pada pada setiap hari **Jumat pukul 17:00 sampai 19:00**. Selain itu, dari hasil pemodelan yang menggunakan metode ETS, HoltWinter, SARIMA, STLM dan TBATS yang sudah di-uji, model **TBATS** menggunakan objek **Multiple Seasonal Time Series** menghasilkan nilai error paling kecil dengan nilai **MAE < 10**. Jika dilakukan forecasting menggunakan model **TBATS** untuk 3 Desember 2017 pukul 00:00 sampai 9 Desember 2017 pukul 23:00, hasilnya menunjukan demand paling tinggi pada ketiga sub-area terjadi pada 8 Desember 2017 pukul 18:00, dimana demand di sxk87 sebanyak 85, demand di sxk9e sebanyak 106 dan demand di sxk9s sebanyak 91.
+
 
 
 ***

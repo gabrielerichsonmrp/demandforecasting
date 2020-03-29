@@ -145,10 +145,17 @@ code > span.kw {
 
 
 p > code {
-    background-color: #ecf0f1!important;
-    padding: 1%;
-    margin: 0.4%;
+    background-color: #29987436!important;
     font-weight: 600;
+    white-space: normal;
+    padding: 8px;
+    color: #086886;
+    border-radius: 8px;
+    display: block;
+    margin-block-start: 1em;
+    margin-block-end: 1em;
+    margin-inline-start: 0px;
+    margin-inline-end: 0px;
 }
 
 
